@@ -1,0 +1,38 @@
+[project]
+name = "spinereports"
+version = "20251023"
+requires-python = ">=3.10"
+description = "Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data."
+readme = "README.md"
+authors = [
+    { name = "Nathan Molinier", email = "nathan.molinier@polymtl.ca"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+keywords = [
+    'deep learning',
+    'image segmentation',
+    'nnU-Net',
+    'nnunet',
+    'magnetic resonance imaging',
+    'radiology reports',
+    'morphometrics',
+    'mri'
+]
+dependencies = [
+    "opencv-python"
+]
+
+[project.urls]
+homepage = "https://github.com/ivadomed/SpineReports"
+repository = "https://github.com/ivadomed/SpineReports"
+
+[build-system]
+requires = ["pip>=23", "setuptools>=67"]
+build-backend = "setuptools.build_meta"
