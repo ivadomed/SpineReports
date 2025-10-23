@@ -91,6 +91,7 @@ INPUT_FOLDER/
 
 2. Construct a `tsv` file with demographics like this DEMOGRAPHICS.tsv
 > The order of the columns is not important
+
 | participant_id | sex | age |
 | :---: | :---: | :---: |
 | sub-001 | M | 39 |
