@@ -69,5 +69,8 @@ totalspineseg -i INPUT_FOLDER -o OUTPUT_FOLDER --iso
 
 3. Run SpineReports to generate the reports
 ```
+spinereports -t TEST_INPUT_FOLDER -c CONTROL_INPUT_FOLDER -o reports
 ```
+
+The **test subjects** corresponds to the subjects for which a report will be generated. The **control subjects** corresponds to the violin plots shown in gray in the background (see report examples at the top of the README.). If you want to generate reports for all your subjects/scans, you can specify the same path for both **TEST_INPUT_FOLDER** and **CONTROL_INPUT_FOLDER**.
 
