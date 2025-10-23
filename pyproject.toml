@@ -33,6 +33,10 @@ dependencies = [
 homepage = "https://github.com/ivadomed/SpineReports"
 repository = "https://github.com/ivadomed/SpineReports"
 
+[project.scripts]
+spinereports = "spinereports.spinereports:main"
+spinereports_plot_by_group = "spinereports.plot_by_group:main"
+
 [build-system]
 requires = ["pip>=23", "setuptools>=67"]
 build-backend = "setuptools.build_meta"
