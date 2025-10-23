@@ -18,6 +18,10 @@ Automated extraction of spinal morphometrics and generation of structured radiol
 | :---: |
 | <img src="spinereports/resources/imgs/report_vertebrae.png" width="900"> |
 
+In these report examples:
+- The background violin plot in gray (or lineplot for the canal) corresponds to the **control group** (multiple subjects)
+- The red line in each graph and the pictures correspond to a specific subject in the **test group**. Reports are only generated for the test group.
+
 ## How to install ?
 
 1. Open a `bash` terminal in the directory where you want to work.
@@ -58,6 +62,7 @@ INPUT_FOLDER/
 ``` 
 
 2. Run TotalSpineSeg to get generate the segmentations in the 1mm isotropic space
+> Perform this for both your control group and test group
 ```
 totalspineseg -i INPUT_FOLDER -o OUTPUT_FOLDER --iso
 ```
