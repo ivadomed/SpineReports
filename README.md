@@ -102,4 +102,22 @@ INPUT_FOLDER/
 spinereports_plot_by_group -i TOTALSPINESEG_FOLDER -d DEMOGRAPHICS.tsv -o group_analysis
 ```
 
+### Examples of group analysis for sex
+
+| Canal group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_canal_by_sex.png" width="900"> |
+
+| Discs group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_discs_by_sex.png" width="900"> |
+
+| Foramens group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_foramens_by_sex.png" width="900"> |
+
+| Vertebrae group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_vertebrae_by_sex.png" width="900"> |
+
 
