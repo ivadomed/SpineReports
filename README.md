@@ -2,6 +2,22 @@
 
 Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
 
+| Canal report |
+| :---: |
+| <img src="spinereports/resources/imgs/report_canal.png" width="900"> | 
+
+| Discs report |
+| :---: |
+| <img src="spinereports/resources/imgs/report_discs.png" width="900"> |
+
+| Foramens report |
+| :---: |
+| <img src="spinereports/resources/imgs/report_foramens.png" width="900"> |
+
+| Vertebrae report |
+| :---: |
+| <img src="spinereports/resources/imgs/report_vertebrae.png" width="900"> |
+
 ## How to install ?
 
 1. Open a `bash` terminal in the directory where you want to work.
