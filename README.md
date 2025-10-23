@@ -121,4 +121,22 @@ spinereports_plot_by_group -i TOTALSPINESEG_FOLDER -d DEMOGRAPHICS.tsv -o group_
 | :---: |
 | <img src="spinereports/resources/imgs/group_analysis_vertebrae_by_sex.png" width="900"> |
 
+### Examples of group analysis for age
+
+| Canal group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_canal_by_age.png" width="900"> |
+
+| Discs group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_discs_by_age.png" width="900"> |
+
+| Foramens group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_foramens_by_age.png" width="900"> |
+
+| Vertebrae group analysis |
+| :---: |
+| <img src="spinereports/resources/imgs/group_analysis_vertebrae_by_age.png" width="900"> |
+
 
