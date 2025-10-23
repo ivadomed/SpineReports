@@ -266,7 +266,7 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
                             median_dict[group][struc][struc_name][metric] = {'median': median_value, 'std': std_value}
     
     # Compute discs gradings
-    if 'T2w' in subject_data:
+    if 'T2w' in str(sub_folder):
         subject_data = compute_discs_gradings(subject_data, new_all_values, do_grading=True)
     else:
         subject_data = compute_discs_gradings(subject_data, new_all_values, do_grading=False)
@@ -715,31 +715,34 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 1
                 for metric in metrics:
                     ax = axes[idx]
-                    y_subject = subject_data[struc][struc_name][metric]
-                    x_subject = subject_data[struc][struc_name]['slice_interp']
+                    if metric in subject_data[struc][struc_name]:
+                        y_subject = subject_data[struc][struc_name][metric]
+                        x_subject = subject_data[struc][struc_name]['slice_interp']
 
-                    # Keep lines with metrics line equal to metric
-                    all_values_data = all_values_df[group][struc][struc_name][metric]
-                    
-                    # Use seaborn line plot
-                    sns.lineplot(x='slice_interp', y='values', data=all_values_data, ax=ax, errorbar='sd')
+                        # Keep lines with metrics line equal to metric
+                        all_values_data = all_values_df[group][struc][struc_name][metric]
+                        
+                        # Use seaborn line plot
+                        sns.lineplot(x='slice_interp', y='values', data=all_values_data, ax=ax, errorbar='sd', color='gray')
 
-                    # Plot subject
-                    ax.plot(x_subject, y_subject, color='red', linewidth=2)
-                    
-                    # Add vertebrae labels
-                    disc = last_disc
-                    top_pos = 0
-                    nb_discs = all_values_data['slice_interp'].max()//discs_gap
-                    for i in range(nb_discs+1):
-                        top_vert = disc.split('-')[0]
-                        ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
-                        ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=12, color='black', alpha=0.7)
-                        top_pos += discs_gap
-                        disc = previous_structure(disc)
+                        # Plot subject
+                        ax.plot(x_subject, y_subject, color='red', linewidth=2)
+                        
+                        # Add vertebrae labels
+                        disc = last_disc
+                        top_pos = 0
+                        nb_discs = all_values_data['slice_interp'].max()//discs_gap
+                        for i in range(nb_discs+1):
+                            top_vert = disc.split('-')[0]
+                            ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
+                            ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=12, color='black', alpha=0.7)
+                            top_pos += discs_gap
+                            disc = previous_structure(disc)
 
-                    ax.set_xlabel('')
-                    fig.tight_layout()
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+                    else:
+                        ax.set_axis_off()
                     idx += 1
 
             plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
@@ -788,25 +791,30 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 2
                 for metric in metrics:
                     ax = axes[idx]
-                    subject_value = subject_data[struc][struc_name][metric]
-                    all_values_data = all_values_df[group][struc][struc_name][metric]
+                    if metric in all_values_df[group][struc][struc_name]:
+                        all_values_data = all_values_df[group][struc][struc_name][metric]
+                        add_group = True
+                    
+                    if metric in subject_data[struc][struc_name]:
+                        subject_value = subject_data[struc][struc_name][metric]
+                        if subject_value != -1:
+                            add_subject = True
 
-                    # Plot metric for subject
-                    if subject_value == -1:
+                    # Plot metrics
+                    if add_group:
                         sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                    elif subject_value < median_dict[group][struc][struc_name][metric]['median'] - 0.8*median_dict[group][struc][struc_name][metric]['std']:
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='orange')
-                    elif subject_value > median_dict[group][struc][struc_name][metric]['median'] + 0.8*median_dict[group][struc][struc_name][metric]['std']:
-                        # Highlight the violin plot
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='green')
-                    else:
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                        
-                    ax.tick_params(axis='x', rotation=45, labelsize=12)
-                    if subject_value != -1:
-                        axes[idx].axvline(x=subject_value, color='red', linestyle='--')
-                    ax.set_xlabel('')
-                    fig.tight_layout()
+                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+                    if add_subject:
+                        ax.axvline(x=subject_value, color='red', linestyle='--')  
+                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+
+                    if not add_group and not add_subject:
+                        ax.set_axis_off()
+                    
                     idx += 1
 
             plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
@@ -858,25 +866,30 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 4
                 for metric in metrics:
                     ax = axes[idx]
-                    subject_value = subject_data[struc][struc_name][metric]
-                    all_values_data = all_values_df[group][struc][struc_name][metric]
-                    # Plot metric for subject
-                    if subject_value == -1:
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                    elif subject_value < median_dict[group][struc][struc_name][metric]['median'] - 0.8*median_dict[group][struc][struc_name][metric]['std']:
-                        # Highlight the violin plot in orange
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='orange')
-                    elif subject_value > median_dict[group][struc][struc_name][metric]['median'] + 0.8*median_dict[group][struc][struc_name][metric]['std']:
-                        # Highlight the violin plot in green
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='green')
-                    else:
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
+                    if metric in all_values_df[group][struc][struc_name]:
+                        all_values_data = all_values_df[group][struc][struc_name][metric]
+                        add_group = True
+                    
+                    if metric in subject_data[struc][struc_name]:
+                        subject_value = subject_data[struc][struc_name][metric]
+                        if subject_value != -1:
+                            add_subject = True
 
-                    ax.tick_params(axis='x', rotation=45, labelsize=30)
-                    if subject_value != -1:
-                        axes[idx].axvline(x=subject_value, color='red', linestyle='--')
-                    ax.set_xlabel('')
-                    fig.tight_layout()
+                    # Plot metrics
+                    if add_group:
+                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
+                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+                    if add_subject:
+                        ax.axvline(x=subject_value, color='red', linestyle='--')  
+                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+
+                    if not add_group and not add_subject:
+                        ax.set_axis_off()
+                    
                     idx += 1
 
             plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
@@ -921,25 +934,30 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 3
                 for metric in metrics:
                     ax = axes[idx]
-                    subject_value = subject_data[struc][struc_name][metric]
-                    all_values_data = all_values_df[group][struc][struc_name][metric]
-                    # Plot metric for subject
-                    if subject_value == -1:
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                    elif subject_value < median_dict[group][struc][struc_name][metric]['median'] - 0.8*median_dict[group][struc][struc_name][metric]['std']:
-                        # Highlight the violin plot in orange
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='orange')
-                    elif subject_value > median_dict[group][struc][struc_name][metric]['median'] + 0.8*median_dict[group][struc][struc_name][metric]['std']:
-                        # Highlight the violin plot in green
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='green')
-                    else:
-                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
+                    if metric in all_values_df[group][struc][struc_name]:
+                        all_values_data = all_values_df[group][struc][struc_name][metric]
+                        add_group = True
+                    
+                    if metric in subject_data[struc][struc_name]:
+                        subject_value = subject_data[struc][struc_name][metric]
+                        if subject_value != -1:
+                            add_subject = True
 
-                    ax.tick_params(axis='x', rotation=45, labelsize=12)
-                    if subject_value != -1:
-                        axes[idx].axvline(x=subject_value, color='red', linestyle='--')
-                    ax.set_xlabel('')
-                    fig.tight_layout()
+                    # Plot metrics
+                    if add_group:
+                        sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
+                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+                    if add_subject:
+                        ax.axvline(x=subject_value, color='red', linestyle='--')  
+                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.set_xlabel('')
+                        fig.tight_layout()
+
+                    if not add_group and not add_subject:
+                        ax.set_axis_off()
+                    
                     idx += 1
 
             plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
@@ -967,8 +985,8 @@ def categorize_age_groups(age):
         return '60+'
 
 if __name__ == "__main__":
-    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/metrics_output'
-    control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/metrics_output'
+    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
+    control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
     ofolder = 'test'
     quiet = False
     generate_reports(
