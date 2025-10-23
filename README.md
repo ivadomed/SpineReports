@@ -74,7 +74,7 @@ spinereports -t TEST_TOTALSPINESEG_FOLDER -c CONTROL_TOTALSPINESEG_FOLDER -o rep
 
 The **test subjects** corresponds to the subjects for which a report will be generated. The **control subjects** corresponds to the violin plots shown in gray in the background (see report examples at the top of the README.). If you want to generate reports for all your subjects/scans, you can specify the same path for both **TEST_TOTALSPINESEG_FOLDER** and **CONTROL_TOTALSPINESEG_FOLDER**.
 
-## How to generate group analysis
+## How to generate group analysis ?
 
 It is also possible to only generate group analysis (by sex and age) with this repository
 
