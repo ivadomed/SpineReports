@@ -178,7 +178,50 @@ def generate_reports(
     # Align canal and CSF for control group
     all_values, discs_gap, last_disc = rescale_canal(all_values, rev_mapping)
 
-        # TODO : save all values
+    # Save all values
+    all_values_path = ofolder_path / 'all_values'
+    for group in all_values.keys():
+        for struc in all_values[group].keys():
+            struc_rows = []
+            for struc_name in all_values[group][struc].keys():
+                # capture slice_interp if present per structure-name
+                slice_interps = all_values[group][struc][struc_name].get('slice_interp', None)
+                if slice_interps is not None:
+                    metrics = [m for m in all_values[group][struc][struc_name].keys() if m != 'slice_interp']
+                    for i, slice_interp in enumerate(slice_interps):
+                        for j in range(len(slice_interp)):
+                            row = {
+                                'structure': struc,
+                                'structure_name': struc_name,
+                                'subject_index': i,
+                                'slice_interp': slice_interp[j]
+                            }
+                            for metric in metrics:
+                                values = all_values[group][struc][struc_name][metric]
+                                if isinstance(values[i], list):
+                                    row[metric] = values[i][j]
+                                else:
+                                    raise ValueError(f"Metric {metric} for structure {struc_name} is not a list as expected.")
+                            struc_rows.append(row)
+                else:
+                    metrics = [m for m in all_values[group][struc][struc_name].keys()]
+                    nb_subjects = max([len(all_values[group][struc][struc_name][m]) for m in metrics])
+                    for i in range(nb_subjects):
+                        row = {
+                            'structure': struc, 
+                            'structure_name': struc_name,
+                            'subject_index': i
+                        }
+                        for metric in metrics:
+                            if i < len(all_values[group][struc][struc_name][metric]):
+                                val = all_values[group][struc][struc_name][metric][i]
+                                if isinstance(val, (float, int)):
+                                    row[metric] = val
+                        struc_rows.append(row)
+            csv_path = all_values_path / f"{struc}_{group}.csv"
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            subject_df = pd.DataFrame(struc_rows)
+            subject_df.to_csv(csv_path, index=False)
     
     # Create global figures for test data subjects
     if not quiet: print("\n" "Generating test group reports:")
