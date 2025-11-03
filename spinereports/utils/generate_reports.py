@@ -727,6 +727,46 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             'canal': ['area', 'diameter_AP', 'diameter_RL', 'eccentricity', 'solidity'],
         }
 
+    # Prepare output subfolders
+    images_dir = Path(ofolder_path) / 'images'
+    files_dir = Path(ofolder_path) / 'files'
+    images_dir.mkdir(parents=True, exist_ok=True)
+    files_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save subject_data in csv file
+    for struc in subject_data.keys():
+        struc_rows = []
+        for struc_name in subject_data[struc].keys():
+            # capture slice_interp if present per structure-name
+            slice_interp = subject_data[struc][struc_name].get('slice_interp', None)
+            if slice_interp is not None:
+                metrics = [m for m in subject_data[struc][struc_name].keys() if m != 'slice_interp']
+                for i in range(len(slice_interp)):
+                    row = {
+                        'structure': struc,
+                        'structure_name': struc_name,
+                        'slice_interp': slice_interp[i]
+                    }
+                    for metric in metrics:
+                        values = subject_data[struc][struc_name][metric]
+                        if isinstance(values, list):
+                            row[metric] = subject_data[struc][struc_name][metric][i]
+                        else:
+                            raise ValueError(f"Metric {metric} for structure {struc_name} is not a list as expected.")
+                    struc_rows.append(row)
+            else:
+                row = {'structure': struc, 'structure_name': struc_name}
+                metrics = [m for m in subject_data[struc][struc_name].keys()]
+                for metric in metrics:
+                    val = subject_data[struc][struc_name][metric]
+                    # store metric values as JSON to preserve lists
+                    if isinstance(val, (float, int)):
+                        row[metric] = val
+                struc_rows.append(row)
+        csv_path = files_dir / f"{struc}_subject.csv"
+        subject_df = pd.DataFrame(struc_rows)
+        subject_df.to_csv(csv_path, index=False)
+
     # Create discs, vertebrae, foramens figures
     for group in all_values_df.keys():
         for struc in ['canal']:
@@ -787,7 +827,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                         ax.set_axis_off()
                     idx += 1
 
-            plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
+            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
 
         # Create vertebrae, foramens figures
         for struc in ['foramens']:
@@ -859,7 +899,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     
                     idx += 1
 
-            plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
+            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
 
         # Create discs figures
         for struc in ['discs']:
@@ -934,7 +974,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     
                     idx += 1
 
-            plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
+            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
         
         for struc in ['vertebrae']:
             # Create a subplot for each subject and overlay a red line corresponding to their value
@@ -1002,7 +1042,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     
                     idx += 1
 
-            plt.savefig(str(ofolder_path / f"compared_{group}_{struc}.png"))
+            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
 
 
 def convert_str_to_list(string):
