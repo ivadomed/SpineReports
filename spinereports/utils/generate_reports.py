@@ -111,73 +111,72 @@ def generate_reports(
         rev_mapping = {v: k for k, v in mapping.items()}
     
     # Extract metrics values of the control group
-    if not os.path.exists(str(control_path / "all_values.json")):
-        all_values = {'all':{}}
-        subjects = [s for s in os.listdir(control_path) if os.path.isdir(control_path / s)]
-        if not quiet: print("\n" "Processing control subjects:")
-        for subject in tqdm(subjects, disable=quiet):
-            control_sub_folder = control_path / subject
-            sub_name = subject.split('_')[0]
+    all_values = {'all':{}}
+    subjects = [s for s in os.listdir(control_path) if os.path.isdir(control_path / s)]
+    if not quiet: print("\n" "Processing control subjects:")
+    for subject in tqdm(subjects, disable=quiet):
+        control_sub_folder = control_path / subject
+        sub_name = subject.split('_')[0]
 
-            # Fetch demographics if available
-            sex_key = None
-            age_key = None
-            if demographics_control and sub_name in demographics_control:
-                if demographics_control[sub_name]["sex"] in ['M', 'F']:
-                    sex_key = f'sex_{demographics_control[sub_name]["sex"]}'
-                try:
-                    float_age = float(demographics_control[sub_name]["age"])
-                except ValueError:
-                    float_age = None
-                if float_age is not None:
-                    age_key = f'age_{categorize_age_groups(float_age)}'                
+        # Fetch demographics if available
+        sex_key = None
+        age_key = None
+        if demographics_control and sub_name in demographics_control:
+            if demographics_control[sub_name]["sex"] in ['M', 'F']:
+                sex_key = f'sex_{demographics_control[sub_name]["sex"]}'
+            try:
+                float_age = float(demographics_control[sub_name]["age"])
+            except ValueError:
+                float_age = None
+            if float_age is not None:
+                age_key = f'age_{categorize_age_groups(float_age)}'                
 
-            if sex_key is not None and not sex_key in all_values:
-                all_values[sex_key] = {}
-            if age_key is not None and not age_key in all_values:
-                all_values[age_key] = {}
+        if sex_key is not None and not sex_key in all_values:
+            all_values[sex_key] = {}
+        if age_key is not None and not age_key in all_values:
+            all_values[age_key] = {}
 
-            # Compute metrics subject
-            control_data = compute_metrics_subject(control_sub_folder)
+        # Compute metrics subject
+        control_data = compute_metrics_subject(control_sub_folder)
 
-            # Gather all values for each metric and structures
-            for struc in control_data.keys():
-                for struc_name in control_data[struc].keys():
-                    for metric in control_data[struc][struc_name].keys():
-                        # Add subject to all_values
-                        subject_value = control_data[struc][struc_name][metric]
-                        if subject_value != -1:
-                            if struc not in all_values['all']:
-                                all_values['all'][struc] = {}
-                            if struc_name not in all_values['all'][struc]:
-                                all_values['all'][struc][struc_name] = {}
-                            if metric not in all_values['all'][struc][struc_name]:
-                                all_values['all'][struc][struc_name][metric] = []
-                            
-                            if sex_key is not None:
-                                if struc not in all_values[sex_key]:
-                                    all_values[sex_key][struc] = {}
-                                if struc_name not in all_values[sex_key][struc]:
-                                    all_values[sex_key][struc][struc_name] = {}
-                                if metric not in all_values[sex_key][struc][struc_name]:
-                                    all_values[sex_key][struc][struc_name][metric] = []
+        # Gather all values for each metric and structures
+        for struc in control_data.keys():
+            for struc_name in control_data[struc].keys():
+                for metric in control_data[struc][struc_name].keys():
+                    # Add subject to all_values
+                    subject_value = control_data[struc][struc_name][metric]
+                    if subject_value != -1:
+                        if struc not in all_values['all']:
+                            all_values['all'][struc] = {}
+                        if struc_name not in all_values['all'][struc]:
+                            all_values['all'][struc][struc_name] = {}
+                        if metric not in all_values['all'][struc][struc_name]:
+                            all_values['all'][struc][struc_name][metric] = []
+                        
+                        if sex_key is not None:
+                            if struc not in all_values[sex_key]:
+                                all_values[sex_key][struc] = {}
+                            if struc_name not in all_values[sex_key][struc]:
+                                all_values[sex_key][struc][struc_name] = {}
+                            if metric not in all_values[sex_key][struc][struc_name]:
+                                all_values[sex_key][struc][struc_name][metric] = []
 
-                            if age_key is not None:
-                                if struc not in all_values[age_key]:
-                                    all_values[age_key][struc] = {}
-                                if struc_name not in all_values[age_key][struc]:
-                                    all_values[age_key][struc][struc_name] = {}
-                                if metric not in all_values[age_key][struc][struc_name]:
-                                    all_values[age_key][struc][struc_name][metric] = []
+                        if age_key is not None:
+                            if struc not in all_values[age_key]:
+                                all_values[age_key][struc] = {}
+                            if struc_name not in all_values[age_key][struc]:
+                                all_values[age_key][struc][struc_name] = {}
+                            if metric not in all_values[age_key][struc][struc_name]:
+                                all_values[age_key][struc][struc_name][metric] = []
 
-                            all_values['all'][struc][struc_name][metric].append(subject_value)
-                            if sex_key is not None:
-                                all_values[sex_key][struc][struc_name][metric].append(subject_value)
-                            if age_key is not None:
-                                all_values[age_key][struc][struc_name][metric].append(subject_value)
+                        all_values['all'][struc][struc_name][metric].append(subject_value)
+                        if sex_key is not None:
+                            all_values[sex_key][struc][struc_name][metric].append(subject_value)
+                        if age_key is not None:
+                            all_values[age_key][struc][struc_name][metric].append(subject_value)
 
-        # Align canal and CSF for control group
-        all_values, discs_gap, last_disc = rescale_canal(all_values, rev_mapping)
+    # Align canal and CSF for control group
+    all_values, discs_gap, last_disc = rescale_canal(all_values, rev_mapping)
 
         # TODO : save all values
     
