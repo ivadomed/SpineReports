@@ -393,18 +393,20 @@ def measure_seg(img, seg, label, mapping):
     seg_bin = zeros_like(seg) # Segmentation of the vertebral bodies and the discs
     for i, struc in enumerate(mapping.keys()):
         if mapping[struc] in unique_seg  and (10 < mapping[struc] < 50): # Vertebrae
+            is_sacrum = False
+            add_foramens = False
             vert_value = int(struc[1:])
             if struc.startswith('C'):
                 if vert_value == 7:
                     next_vert = 'T1'
                 else:
                     next_vert = f'C{vert_value+1}'
-            if struc.startswith('T'):
+            elif struc.startswith('T'):
                 if vert_value == 12:
                     next_vert = 'L1'
                 else:
                     next_vert = f'T{vert_value+1}'
-            if struc.startswith('L'):
+            elif struc.startswith('L'):
                 next_vert = f'L{vert_value+1}'
             if mapping[next_vert] in unique_seg: # two adjacent vertebrae
                 # Fetch vertebrae names
@@ -448,22 +450,39 @@ def measure_seg(img, seg, label, mapping):
                                 vert_list.append(vert)
                     seg_foramen_data += seg_vert_data
 
-                # Compute foramens properties
                 if top_vert in vert_list and bottom_vert in vert_list: # Both vertebrae were measured and are complete
-                    foramens_areas, foramens_imgs = measure_foramens(seg_foramen_data=seg_foramen_data, canal_centerline=centerline, pr=pr)
+                    add_foramens = True
+            
+            elif struc.startswith('L') and vert_value > 4 and mapping['sacrum'] in unique_seg:
+                # Create foramen name
+                foramens_name = f'foramens_{struc}-S'
+
+                # Init foramen segmentation
+                disc_mask = (seg.data == mapping[f'L5-S'])
+                seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
+
+                # Add vertebrae and sacrum
+                seg_foramen_data += (seg.data == mapping[struc]).astype(int)
+                seg_foramen_data += (seg.data == mapping["sacrum"]).astype(int) * 3  # Set sacrum value to 3
+                add_foramens = True
+                is_sacrum = True
+            
+            # Compute foramens properties
+            if add_foramens:
+                foramens_areas, foramens_imgs = measure_foramens(seg_foramen_data=seg_foramen_data, canal_centerline=centerline, is_sacrum=is_sacrum, pr=pr)
+            
+                # Save image
+                for side,image in foramens_imgs.items():
+                    imgs[f'{foramens_name}_{side}'] = image
                 
-                    # Save image
-                    for side,image in foramens_imgs.items():
-                        imgs[f'{foramens_name}_{side}'] = image
-                    
-                    # Save foramen metrics
-                    foramens_row = {
-                        "structure": "foramen",
-                        "name": foramens_name,
-                        "right_surface": foramens_areas['right'],
-                        "left_surface": foramens_areas['left']
-                    }
-                    foramens_rows.append(foramens_row)
+                # Save foramen metrics
+                foramens_row = {
+                    "structure": "foramen",
+                    "name": foramens_name,
+                    "right_surface": foramens_areas['right'],
+                    "left_surface": foramens_areas['left']
+                }
+                foramens_rows.append(foramens_row)
     metrics['vertebrae'] = vertebrae_rows
     metrics['foramens'] = foramens_rows
 
@@ -883,7 +902,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
     return properties, img_dict, body_array, True
 
-def measure_foramens(seg_foramen_data, canal_centerline, pr):
+def measure_foramens(seg_foramen_data, canal_centerline, is_sacrum, pr):
     '''
     This function measures the surface of the left and right neural foramen formed by 2 vertebrae and a disc
 
@@ -900,7 +919,10 @@ def measure_foramens(seg_foramen_data, canal_centerline, pr):
             left and right image of the foramina
     '''
     # Extract vertebrae and disc coords
-    coords = np.argwhere(seg_foramen_data > 0)
+    if not is_sacrum:
+        coords = np.argwhere(seg_foramen_data > 0)
+    else:
+        coords = np.argwhere((seg_foramen_data > 0) & (seg_foramen_data < 3)) # Exclude sacrum from plane calculation
 
     # Extract z position (SI) of the disc center of mass
     disc_coords = np.argwhere(seg_foramen_data == 2)
@@ -962,6 +984,9 @@ def measure_foramens(seg_foramen_data, canal_centerline, pr):
     if (disc_pos[1]-canal_pos[1])*w(u1, u2, best_theta)[1] < 0:
         # Orient vector from canal to disc
         best_theta += np.pi
+    
+    if is_sacrum:
+        coords = np.argwhere(seg_foramen_data > 0) # Now include sacrum coords for foramens projection
 
     n = np.cross(v, w(u1, u2, best_theta)) # normal vector of the plane
     n /= np.linalg.norm(n)
