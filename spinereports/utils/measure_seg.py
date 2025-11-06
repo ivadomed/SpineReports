@@ -1011,16 +1011,18 @@ def measure_foramens(seg_foramen_data, canal_centerline, pr):
             # Select second biggest region assuming it is the foramen
             foramen_region = regions[np.argsort(areas)[-2]]
             foramen_mask = labeled_img == foramen_region.label
-            foramens_imgs[side] = labeled_bg + foramen_mask.astype(int)
-            
+
             # Calculate foramen area
             pixel_surface = pr**2
             foramen_area = np.argwhere(foramen_mask > 0).shape[0]*pixel_surface #mm2
             foramens_areas[side] = foramen_area
+            
+            # Flip the foraminal image upside-down for better visual
+            foramens_imgs[side] = np.flipud(labeled_bg) + np.flipud(foramen_mask.astype(int))
         else:
             #print('Error with foramen, possibly not closed shape.')
             foramens_areas[side] = -1
-            foramens_imgs[side] = labeled_bg
+            foramens_imgs[side] = np.flipud(labeled_bg)
     return foramens_areas, foramens_imgs
 
 def find_intensity_peaks(values):
