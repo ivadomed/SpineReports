@@ -828,6 +828,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 2
                 for metric in metrics:
                     ax = axes[idx]
+                    add_group = False
+                    add_subject = False
                     if metric in all_values_df[group][struc][struc_name]:
                         all_values_data = all_values_df[group][struc][struc_name][metric]
                         add_group = True
@@ -903,6 +905,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 4
                 for metric in metrics:
                     ax = axes[idx]
+                    add_group = False
+                    add_subject = False
                     if metric in all_values_df[group][struc][struc_name]:
                         all_values_data = all_values_df[group][struc][struc_name][metric]
                         add_group = True
@@ -971,6 +975,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 idx += 3
                 for metric in metrics:
                     ax = axes[idx]
+                    add_group = False
+                    add_subject = False
                     if metric in all_values_df[group][struc][struc_name]:
                         all_values_data = all_values_df[group][struc][struc_name][metric]
                         add_group = True
