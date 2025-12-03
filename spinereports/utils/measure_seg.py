@@ -580,13 +580,14 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     # Extract disc intensity in middle of the disc
     middle_RLslice = int(ellipsoid['center'][0])
     values_2d = np.array([img_data[c[0], c[1], c[2]] for c in coords if middle_RLslice -1 <= c[0] < middle_RLslice + 1])
+    values_3d = np.array([img_data[c[0], c[1], c[2]] for c in coords])
+    # Normalize disc intensity using CSF signal
+    values_3d = values_3d / (csf_signal - min(values_2d))
+    values_2d = values_2d / (csf_signal - min(values_2d))
+    # peaks = find_intensity_peaks(values_smooth)
+    min_peak = np.percentile(values_2d, 10) # peaks[0]
+    max_peak = np.percentile(values_2d, 90) # peaks[-1]
 
-    # smooth values using a gaussian filter
-    values = values_2d / (csf_signal - min(values_2d)) # Normalize disc intensity using CSF signal
-    values_smooth = smooth(np.sort(values), 10)
-    peaks = find_intensity_peaks(values_smooth)
-    min_peak = peaks[0]
-    max_peak = peaks[-1]
 
     # Extract disc volume
     voxel_volume = pr**3
