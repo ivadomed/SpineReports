@@ -21,6 +21,7 @@ from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
 import SimpleITK as sitk
+from scipy.spatial import ConvexHull
 
 
 warnings.filterwarnings("ignore")
@@ -541,6 +542,8 @@ def measure_seg(img, seg, label, mapping):
                         "name": struc,
                         "eccentricity": properties['eccentricity'],
                         "solidity": properties['solidity'],
+                        "nucleus_eccentricity": properties['nucleus_eccentricity'],
+                        "nucleus_solidity": properties['nucleus_solidity'],
                         "intensity_variation": properties['intensity_variation'],
                         "median_thickness": properties['median_thickness'],
                         "center": properties['center'],
@@ -588,6 +591,9 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     min_peak = np.percentile(values_2d, 10) # peaks[0]
     max_peak = np.percentile(values_2d, 90) # peaks[-1]
 
+    # Fetch shape of nucleus (max intensity region)
+    nucleus_coords = np.array([c for i, c in enumerate(coords) if values_3d[i] >= max_peak])
+    ellipsoid_nucl = fit_ellipsoid(np.array(nucleus_coords), centerline_deriv, min_size=8)
 
     # Extract disc volume
     voxel_volume = pr**3
@@ -596,10 +602,12 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     properties = {
         'center': np.round(ellipsoid['center']),
         'median_thickness': median_thickness*pr,
-        'intensity_variation': (max_peak - min_peak) / max_peak if max_peak > 0 else 0,
+        'intensity_variation': (max_peak - min_peak),
         'volume': volume,
         'eccentricity': ellipsoid['eccentricity'],
-        'solidity': ellipsoid['solidity']
+        'solidity': ellipsoid['solidity'],
+        'nucleus_eccentricity': ellipsoid_nucl['eccentricity'],
+        'nucleus_solidity': ellipsoid_nucl['solidity'],
     }
 
     # Center volume for visualization
@@ -1500,9 +1508,21 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-039_acq-lowresSag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-039_acq-lowresSag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-212_acq-lowresSag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-212_acq-lowresSag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-212_acq-lowresSag_T2w.nii.gz'
+    
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-237_acq-lowresSag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-237_acq-lowresSag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-237_acq-lowresSag_T2w.nii.gz'
+    
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-088_acq-lowresSag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-088_acq-lowresSag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-088_acq-lowresSag_T2w.nii.gz'
+    
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w.nii.gz'
