@@ -1089,59 +1089,78 @@ def find_intensity_peaks(values):
 
     return significant_means.tolist()
 
-def fit_ellipsoid(coords, centerline_deriv):
+def fit_ellipsoid(coords, centerline_deriv, min_size=32):
     # Compute the center of mass of the disc
     center = coords.mean(axis=0)
 
     # Center the coordinates
     coords_centered = coords - center
+    volume = coords.shape[0]
 
     # Create two perpendicular vectors u1 and u2
     v = centerline_deriv / np.linalg.norm(centerline_deriv)  # Normalize the vector
-    tmp = np.array([1, 0, 0]) # Init temporary non colinear vector
-    u1 = np.cross(v, tmp)
+    u1 = np.array([0, 1, -(v[1]/v[2])]) # AP non colinear vector
     u1 /= np.linalg.norm(u1)
-    u2 = np.cross(v, u1)
+    u2 = np.cross(u1, v)
     u2 /= np.linalg.norm(u2)
-    rotation_matrix = np.stack((u1, u2, v), axis=0)
+    rotation_matrix = np.stack((u2, u1, v), axis=0)
 
-    # Project coords in plane u1u2
-    u1_coords = np.dot(coords_centered, u1)
-    u2_coords = np.dot(coords_centered, u2)
-    # Center the image onto the segmentation
-    u1_coords = u1_coords - np.min(u1_coords)
-    u2_coords = u2_coords - np.min(u2_coords)
-    # Round coordinates
-    u1_coords = np.round(u1_coords).astype(int)
-    u2_coords = np.round(u2_coords).astype(int)
+    # Compute solidity and eccentricity
+    def _proj_props(a, b, min_size=min_size):
+        # Project coords onto plane defined by vectors a and b
+        p_a = np.dot(coords_centered, a)
+        p_b = np.dot(coords_centered, b)
+        # Center to positive coordinates and round
+        p_a = p_a - p_a.min()
+        p_b = p_b - p_b.min()
+        ia = np.round(p_a).astype(int)
+        ib = np.round(p_b).astype(int)
+        # Build binary image
+        H = ia.max()
+        W = ib.max()
+        seg2d = np.zeros((H, W), dtype=bool)
+        for x, y in zip(ia, ib):
+            if x > 0 and y > 0 and x-1 < H and y-1 < W:
+                seg2d[x-1, y-1] = True
+        
+        # Pad image
+        seg2d = np.pad(seg2d, pad_width=5, mode='constant', constant_values=0)
+        seg2d = morphology.remove_small_objects(seg2d, min_size=min_size).astype(int)
+        props = measure.regionprops(measure.label(seg2d))
+        if len(props) == 0:
+            raise ValueError("Error when fitting ellipse to disc")
+        # choose largest region if multiple
+        areas = [p.area for p in props]
+        region = props[np.argmax(areas)]
+        # handle Darwin bug as in other places
+        if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
+            solidity_val = -1.0
+        else:
+            solidity_val = float(region.solidity)
+        ecc_val = float(region.eccentricity)
+        return seg2d, solidity_val, ecc_val
 
-    # Recreate 2 image of projected disc
-    seg = np.zeros((np.max(u1_coords)+5, np.max(u2_coords)+5))
-    for x, y in zip(u1_coords, u2_coords):
-        seg[x-1, y-1]=1
-    seg = morphology.remove_small_objects(seg.astype(bool), min_size=64).astype(int)
+    # Compute 2D projection properties first
+    seg_u1u2, solidity_u1u2, eccentricity_u1u2 = _proj_props(u1, u2)
 
-    # Fit 2D ellipse to projected coordinates in u1u2 plane
-    regions = measure.regionprops(seg)
-    if len(regions) != 1:
-        raise ValueError("Error when fitting ellipse to disc")
-    region = regions[0]
-
-    # Compute solidity = volume / convex_hull_volume
-    volume = coords.shape[0]  # Ellipsoid volume
-
-    # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
-    if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
-        solidity = -1
+    # Compute 3D solidity: ratio of object volume (voxel count) to convex hull volume
+    # Need at least 4 non-coplanar points to build a 3D hull
+    if coords_centered.shape[0] >= 4:
+        hull = ConvexHull(coords_centered)
+        hull_vol = float(getattr(hull, "volume", 0.0))
+        if hull_vol > 1e-8:
+            solidity_3d = float(volume) / hull_vol
+        else:
+            solidity_3d = 1.0
     else:
-        solidity = region.solidity
+        solidity_3d = 1.0
 
     # Results
     ellipsoid = {
         'center': center,
         'rotation_matrix': rotation_matrix,
-        'eccentricity': region.eccentricity,
-        'solidity': solidity,
+        'eccentricity': eccentricity_u1u2,
+        'solidity': solidity_3d,
         'volume': volume
     }
     return ellipsoid
