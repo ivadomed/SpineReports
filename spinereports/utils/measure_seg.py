@@ -1183,17 +1183,17 @@ def compute_thickness_profile(coords, rotation_matrix, bin_size=1.0):
 
     # Rotate coords_centered
     eigvecs = rotation_matrix
-    rot_coords = coords_centered @ eigvecs
+    rot_coords = coords_centered @ np.linalg.inv(eigvecs)
 
     # Find min and max dimensions of the disc in the RL-AP plane
     min_RL, max_RL = rot_coords[:,0].min(), rot_coords[:,0].max()
     min_AP, max_AP = rot_coords[:,1].min(), rot_coords[:,1].max()
 
     # Pad min and max to reduce effect of discs edges
-    min_RL += 3*bin_size
-    max_RL -= 3*bin_size
-    min_AP += 3*bin_size
-    max_AP -= 3*bin_size
+    min_RL += 1*bin_size
+    max_RL -= 1*bin_size
+    min_AP += 1*bin_size
+    max_AP -= 1*bin_size
 
     # Create bin matrix along RL and AP dimension
     bins_RL = np.arange(min_RL, max_RL + bin_size, bin_size)
