@@ -860,15 +860,24 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     # Analyze vertebrae intensity
     body_values = np.array([img_data[c[0], c[1], c[2]] for c in body_coords])
     process_values = np.array([img_data[c[0], c[1], c[2]] for c in process_coords])
-    median_signal = (abs(posterior_radius)*np.median(body_values) + abs(anterior_radius)*np.median(process_values)) / (abs(posterior_radius)+abs(anterior_radius)+1e-8)
-    
+
+    if len(body_values) == 0 or len(process_values) == 0:
+        if len(body_values) == 0:
+            median_signal = np.median(process_values)
+        else:
+            median_signal = np.median(body_values)
+        ap_attenuation = 1
+    else:
+        median_signal = (abs(posterior_radius)*np.median(body_values) + abs(anterior_radius)*np.median(process_values)) / (abs(posterior_radius)+abs(anterior_radius)+1e-8)
+        ap_attenuation = np.median(body_values)/median_signal
+
     properties = {
         'center': np.round(body_pos),
         'median_thickness': median_thickness*pr,
         'AP_thickness': AP_thickness*pr,
         'volume': volume,
         'median_signal': median_signal,
-        'ap_attenuation': np.median(body_values)/median_signal
+        'ap_attenuation': ap_attenuation
     }
     
     # Recreate body volume without rotation
