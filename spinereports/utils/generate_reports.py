@@ -212,6 +212,9 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
     #create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
+    # Load spinereports resources path
+    resources_path = importlib.resources.files(sr_resources)
+
     # Load subject data
     subject_data = compute_metrics_subject(sub_folder)
     sub_name = sub_folder.name.split('_')[0]
@@ -246,13 +249,25 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
             if struc in ['foramens', 'discs', 'vertebrae']:
                 for struc_name in all_values[group][struc].keys():
                     for metric, values in all_values[group][struc][struc_name].items():
-                        # Discard values at 4 times the std from the median
-                        median_value = np.median(values)
-                        std_value = np.std(values)
-                        new_values = [v for v in values if v >= median_value - 4*std_value and v <= median_value + 4*std_value and v != -1]
-                        new_all_values[group][struc][struc_name][metric] = new_values
-                        median_value = np.median(new_values)
-                        std_value = np.std(new_values)
+                        median_added = False
+                        if os.path.exists(os.path.join(resources_path, 'csv', f'{struc}_median_{metric}.csv')):
+                            median_csv_path = os.path.join(resources_path, 'csv', f'{struc}_median_{metric}.csv')
+                            df_median = pd.read_csv(median_csv_path)
+                            med_dict = {name:{'median':float(med), 'std':float(std)} for name, med, std in zip(df_median[struc], df_median[metric], df_median[f'{metric}_std'])}
+                            if struc_name in med_dict:
+                                median_value = med_dict[struc_name]['median']
+                                std_value = med_dict[struc_name]['std']
+                                median_added = True
+                        
+                        if not median_added:
+                            # Discard values at 4 times the std from the median
+                            median_value = np.median(values)
+                            std_value = np.std(values)
+                            new_values = [v for v in values if v >= median_value - 4*std_value and v <= median_value + 4*std_value and v != -1]
+                            new_all_values[group][struc][struc_name][metric] = new_values
+                            median_value = np.median(new_values)
+                            std_value = np.std(new_values)
+                        
                         if group not in median_dict:
                             median_dict[group] = {}
                         if struc not in median_dict[group]:
@@ -264,9 +279,9 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
     
     # Compute discs gradings
     if 'T2w' in str(sub_folder):
-        subject_data = compute_discs_gradings(subject_data, new_all_values, do_grading=True)
+        subject_data = compute_discs_gradings(subject_data, median_dict, do_grading=True)
     else:
-        subject_data = compute_discs_gradings(subject_data, new_all_values, do_grading=False)
+        subject_data = compute_discs_gradings(subject_data, median_dict, do_grading=False)
     
     # Convert all_values to dataframe
     all_values_df = convert_to_df(new_all_values)
@@ -289,37 +304,61 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
     ofolder_subject.mkdir(parents=True, exist_ok=True)
     create_global_figures(interp_data, all_values_df, discs_gap, last_disc, median_dict, imgs_path, rev_mapping, ofolder_subject)
 
-def compute_discs_gradings(subject_data, all_values, do_grading=True):
-    for group in all_values.keys():
+def compute_discs_gradings(subject_data, median_dict, do_grading=True):
+    for group in median_dict.keys():
         for disc in subject_data['discs'].keys():
-            # Grade disc based on height compared to median height in all_values
-            if 'grading' not in subject_data['discs'][disc]:
-                subject_data['discs'][disc]['grading'] = {}
             median_height = None
             std_height = None
-            if disc in all_values[group]['discs']:
-                if 'median_thickness' in all_values[group]['discs'][disc]:
-                    median_height = np.median(all_values[group]['discs'][disc]['median_thickness'])
-                    std_height = np.std(all_values[group]['discs'][disc]['median_thickness'])
+            if 'grading' not in subject_data['discs'][disc]:
+                subject_data['discs'][disc]['grading'] = {}
+            if disc in median_dict[group]['discs']:
+                if 'DHI' in median_dict[group]['discs'][disc]:
+                    median_height = median_dict[group]['discs'][disc]['DHI']['median']
+                    std_height = np.std(median_dict[group]['discs'][disc]['DHI']['std'])
             if do_grading and median_height is not None and std_height is not None:
-                disc_height = subject_data['discs'][disc]['median_thickness']
+                disc_dhi = subject_data['discs'][disc]['DHI']
                 disc_intensity = subject_data['discs'][disc]['intensity_variation']
-                if disc_height <= 0.3*median_height:
-                    grade = 8
-                elif disc_height <= 0.6*median_height:
-                    grade = 7
-                elif disc_height <= 0.9*median_height:
-                    grade = 6
-                elif disc_intensity <= 0.2:
-                    grade = 5
-                elif disc_intensity <= 0.4:
-                    grade = 4
-                elif disc_intensity <= 0.55:
-                    grade = 3
-                elif disc_intensity <= 0.7:
-                    grade = 2
-                elif disc_intensity > 0.7:
-                    grade = 1
+                disc_solidity = subject_data['discs'][disc]['solidity']
+                disc_nucleus_solidity = subject_data['discs'][disc]['nucleus_solidity']
+
+                if disc_dhi == -1 or disc_intensity == -1 or disc_solidity == -1 or disc_nucleus_solidity == -1:
+                    grade = 'Error'
+                else:
+                    # Normalize thickness with control median
+                    normalized_thickness = disc_dhi / median_height
+
+                    # Intensity grade
+                    if disc_intensity <= 0.20:
+                        intensity_grade = 5
+                    elif disc_intensity <= 0.30:
+                        intensity_grade = 4
+                    elif disc_intensity <= 0.45:
+                        intensity_grade = 3
+                    elif disc_nucleus_solidity < 0.60:
+                        intensity_grade =  2
+                    elif disc_nucleus_solidity >= 0.60:
+                        intensity_grade = 1
+                    else:
+                        intensity_grade = 0 # error
+                    
+                    # Thickness grade 
+                    if normalized_thickness < 0.3 or disc_solidity < 0.70:
+                        thickness_grade = 8
+                    elif normalized_thickness < 0.6 or disc_solidity < 0.80:
+                        thickness_grade = 7
+                    elif normalized_thickness < 0.9 or disc_solidity < 0.85:
+                        thickness_grade = 6
+                    else:
+                        thickness_grade = 1
+                    
+                    # Grade disc
+                    if thickness_grade == 1:
+                        grade = intensity_grade
+                    elif intensity_grade == 5:
+                        grade = thickness_grade
+                    else: # Mixed grade or double entry
+                        grade = f"{intensity_grade}/{thickness_grade}"
+
                 subject_data['discs'][disc]['grading'][group] = grade
             elif not do_grading:
                 subject_data['discs'][disc]['grading'][group] = 'N/A'

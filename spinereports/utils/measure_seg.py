@@ -21,6 +21,7 @@ from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
 import SimpleITK as sitk
+from scipy.spatial import ConvexHull
 
 
 warnings.filterwarnings("ignore")
@@ -541,6 +542,8 @@ def measure_seg(img, seg, label, mapping):
                         "name": struc,
                         "eccentricity": properties['eccentricity'],
                         "solidity": properties['solidity'],
+                        "nucleus_eccentricity": properties['nucleus_eccentricity'],
+                        "nucleus_solidity": properties['nucleus_solidity'],
                         "intensity_variation": properties['intensity_variation'],
                         "median_thickness": properties['median_thickness'],
                         "center": properties['center'],
@@ -580,13 +583,17 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     # Extract disc intensity in middle of the disc
     middle_RLslice = int(ellipsoid['center'][0])
     values_2d = np.array([img_data[c[0], c[1], c[2]] for c in coords if middle_RLslice -1 <= c[0] < middle_RLslice + 1])
+    values_3d = np.array([img_data[c[0], c[1], c[2]] for c in coords])
+    # Normalize disc intensity using CSF signal
+    values_3d = values_3d / (csf_signal - min(values_2d))
+    values_2d = values_2d / (csf_signal - min(values_2d))
+    # peaks = find_intensity_peaks(values_smooth)
+    min_peak = np.percentile(values_2d, 10) # peaks[0]
+    max_peak = np.percentile(values_2d, 90) # peaks[-1]
 
-    # smooth values using a gaussian filter
-    values = values_2d / (csf_signal - min(values_2d)) # Normalize disc intensity using CSF signal
-    values_smooth = smooth(np.sort(values), 10)
-    peaks = find_intensity_peaks(values_smooth)
-    min_peak = peaks[0]
-    max_peak = peaks[-1]
+    # Fetch shape of nucleus (max intensity region)
+    nucleus_coords = np.array([c for i, c in enumerate(coords) if values_3d[i] >= max_peak])
+    ellipsoid_nucl = fit_ellipsoid(np.array(nucleus_coords), centerline_deriv, min_size=8)
 
     # Extract disc volume
     voxel_volume = pr**3
@@ -595,10 +602,12 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     properties = {
         'center': np.round(ellipsoid['center']),
         'median_thickness': median_thickness*pr,
-        'intensity_variation': (max_peak - min_peak) / max_peak if max_peak > 0 else 0,
+        'intensity_variation': (max_peak - min_peak),
         'volume': volume,
         'eccentricity': ellipsoid['eccentricity'],
-        'solidity': ellipsoid['solidity']
+        'solidity': ellipsoid['solidity'],
+        'nucleus_eccentricity': ellipsoid_nucl['eccentricity'],
+        'nucleus_solidity': ellipsoid_nucl['solidity'],
     }
 
     # Center volume for visualization
@@ -860,15 +869,24 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     # Analyze vertebrae intensity
     body_values = np.array([img_data[c[0], c[1], c[2]] for c in body_coords])
     process_values = np.array([img_data[c[0], c[1], c[2]] for c in process_coords])
-    median_signal = (abs(posterior_radius)*np.median(body_values) + abs(anterior_radius)*np.median(process_values)) / (abs(posterior_radius)+abs(anterior_radius)+1e-8)
-    
+
+    if len(body_values) == 0 or len(process_values) == 0:
+        if len(body_values) == 0:
+            median_signal = np.median(process_values)
+        else:
+            median_signal = np.median(body_values)
+        ap_attenuation = 1
+    else:
+        median_signal = (abs(posterior_radius)*np.median(body_values) + abs(anterior_radius)*np.median(process_values)) / (abs(posterior_radius)+abs(anterior_radius)+1e-8)
+        ap_attenuation = np.median(body_values)/median_signal
+
     properties = {
         'center': np.round(body_pos),
         'median_thickness': median_thickness*pr,
         'AP_thickness': AP_thickness*pr,
         'volume': volume,
         'median_signal': median_signal,
-        'ap_attenuation': np.median(body_values)/median_signal
+        'ap_attenuation': ap_attenuation
     }
     
     # Recreate body volume without rotation
@@ -1080,59 +1098,78 @@ def find_intensity_peaks(values):
 
     return significant_means.tolist()
 
-def fit_ellipsoid(coords, centerline_deriv):
+def fit_ellipsoid(coords, centerline_deriv, min_size=32):
     # Compute the center of mass of the disc
     center = coords.mean(axis=0)
 
     # Center the coordinates
     coords_centered = coords - center
+    volume = coords.shape[0]
 
     # Create two perpendicular vectors u1 and u2
     v = centerline_deriv / np.linalg.norm(centerline_deriv)  # Normalize the vector
-    tmp = np.array([1, 0, 0]) # Init temporary non colinear vector
-    u1 = np.cross(v, tmp)
+    u1 = np.array([0, 1, -(v[1]/v[2])]) # AP non colinear vector
     u1 /= np.linalg.norm(u1)
-    u2 = np.cross(v, u1)
+    u2 = np.cross(u1, v)
     u2 /= np.linalg.norm(u2)
-    rotation_matrix = np.stack((u1, u2, v), axis=0)
+    rotation_matrix = np.stack((u2, u1, v), axis=0)
 
-    # Project coords in plane u1u2
-    u1_coords = np.dot(coords_centered, u1)
-    u2_coords = np.dot(coords_centered, u2)
-    # Center the image onto the segmentation
-    u1_coords = u1_coords - np.min(u1_coords)
-    u2_coords = u2_coords - np.min(u2_coords)
-    # Round coordinates
-    u1_coords = np.round(u1_coords).astype(int)
-    u2_coords = np.round(u2_coords).astype(int)
+    # Compute solidity and eccentricity
+    def _proj_props(a, b, min_size=min_size):
+        # Project coords onto plane defined by vectors a and b
+        p_a = np.dot(coords_centered, a)
+        p_b = np.dot(coords_centered, b)
+        # Center to positive coordinates and round
+        p_a = p_a - p_a.min()
+        p_b = p_b - p_b.min()
+        ia = np.round(p_a).astype(int)
+        ib = np.round(p_b).astype(int)
+        # Build binary image
+        H = ia.max()
+        W = ib.max()
+        seg2d = np.zeros((H, W), dtype=bool)
+        for x, y in zip(ia, ib):
+            if x > 0 and y > 0 and x-1 < H and y-1 < W:
+                seg2d[x-1, y-1] = True
+        
+        # Pad image
+        seg2d = np.pad(seg2d, pad_width=5, mode='constant', constant_values=0)
+        seg2d = morphology.remove_small_objects(seg2d, min_size=min_size).astype(int)
+        props = measure.regionprops(measure.label(seg2d))
+        if len(props) == 0:
+            raise ValueError("Error when fitting ellipse to disc")
+        # choose largest region if multiple
+        areas = [p.area for p in props]
+        region = props[np.argmax(areas)]
+        # handle Darwin bug as in other places
+        if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
+            solidity_val = -1.0
+        else:
+            solidity_val = float(region.solidity)
+        ecc_val = float(region.eccentricity)
+        return seg2d, solidity_val, ecc_val
 
-    # Recreate 2 image of projected disc
-    seg = np.zeros((np.max(u1_coords)+5, np.max(u2_coords)+5))
-    for x, y in zip(u1_coords, u2_coords):
-        seg[x-1, y-1]=1
-    seg = morphology.remove_small_objects(seg.astype(bool), min_size=64).astype(int)
+    # Compute 2D projection properties first
+    seg_u1u2, solidity_u1u2, eccentricity_u1u2 = _proj_props(u1, u2)
 
-    # Fit 2D ellipse to projected coordinates in u1u2 plane
-    regions = measure.regionprops(seg)
-    if len(regions) != 1:
-        raise ValueError("Error when fitting ellipse to disc")
-    region = regions[0]
-
-    # Compute solidity = volume / convex_hull_volume
-    volume = coords.shape[0]  # Ellipsoid volume
-
-    # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
-    if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
-        solidity = -1
+    # Compute 3D solidity: ratio of object volume (voxel count) to convex hull volume
+    # Need at least 4 non-coplanar points to build a 3D hull
+    if coords_centered.shape[0] >= 4:
+        hull = ConvexHull(coords_centered)
+        hull_vol = float(getattr(hull, "volume", 0.0))
+        if hull_vol > 1e-8:
+            solidity_3d = float(volume) / hull_vol
+        else:
+            solidity_3d = 1.0
     else:
-        solidity = region.solidity
+        solidity_3d = 1.0
 
     # Results
     ellipsoid = {
         'center': center,
         'rotation_matrix': rotation_matrix,
-        'eccentricity': region.eccentricity,
-        'solidity': solidity,
+        'eccentricity': eccentricity_u1u2,
+        'solidity': solidity_3d,
         'volume': volume
     }
     return ellipsoid
@@ -1155,17 +1192,17 @@ def compute_thickness_profile(coords, rotation_matrix, bin_size=1.0):
 
     # Rotate coords_centered
     eigvecs = rotation_matrix
-    rot_coords = coords_centered @ eigvecs
+    rot_coords = coords_centered @ np.linalg.inv(eigvecs)
 
     # Find min and max dimensions of the disc in the RL-AP plane
     min_RL, max_RL = rot_coords[:,0].min(), rot_coords[:,0].max()
     min_AP, max_AP = rot_coords[:,1].min(), rot_coords[:,1].max()
 
     # Pad min and max to reduce effect of discs edges
-    min_RL += 3*bin_size
-    max_RL -= 3*bin_size
-    min_AP += 3*bin_size
-    max_AP -= 3*bin_size
+    min_RL += 1*bin_size
+    max_RL -= 1*bin_size
+    min_AP += 1*bin_size
+    max_AP -= 1*bin_size
 
     # Create bin matrix along RL and AP dimension
     bins_RL = np.arange(min_RL, max_RL + bin_size, bin_size)
@@ -1471,9 +1508,21 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-039_acq-lowresSag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-039_acq-lowresSag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-212_acq-lowresSag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-212_acq-lowresSag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-212_acq-lowresSag_T2w.nii.gz'
+    
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-237_acq-lowresSag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-237_acq-lowresSag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-237_acq-lowresSag_T2w.nii.gz'
+    
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-088_acq-lowresSag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-088_acq-lowresSag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-088_acq-lowresSag_T2w.nii.gz'
+    
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w.nii.gz'
