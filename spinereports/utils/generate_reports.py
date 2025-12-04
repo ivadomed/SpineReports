@@ -321,37 +321,43 @@ def compute_discs_gradings(subject_data, median_dict, do_grading=True):
                 disc_solidity = subject_data['discs'][disc]['solidity']
                 disc_nucleus_solidity = subject_data['discs'][disc]['nucleus_solidity']
 
-                # Intensity grade
-                if disc_intensity <= 0.20:
-                    intensity_grade = 5
-                elif disc_intensity <= 0.30:
-                    intensity_grade = 4
-                elif disc_intensity <= 0.45:
-                    intensity_grade = 3
-                elif disc_nucleus_solidity < 0.60:
-                    intensity_grade =  2
-                elif disc_nucleus_solidity >= 0.60:
-                    intensity_grade = 1
+                if disc_dhi == -1 or disc_intensity == -1 or disc_solidity == -1 or disc_nucleus_solidity == -1:
+                    grade = 'Error'
                 else:
-                    intensity_grade = 0 # error
-                
-                # Thickness grade 
-                if disc_dhi < 0.3 or disc_solidity < 0.70:
-                    thickness_grade = 8
-                elif disc_dhi < 0.6 or disc_solidity < 0.80:
-                    thickness_grade = 7
-                elif disc_dhi < 0.9 or disc_solidity < 0.85:
-                    thickness_grade = 6
-                else:
-                    thickness_grade = 1
-                
-                # Grade disc
-                if thickness_grade == 1:
-                    grade = intensity_grade
-                elif intensity_grade == 5:
-                    grade = thickness_grade
-                else: # Mixed grade or double entry
-                    grade = f"{intensity_grade}/{thickness_grade}"
+                    # Normalize thickness with control median
+                    normalized_thickness = disc_dhi / median_height
+
+                    # Intensity grade
+                    if disc_intensity <= 0.20:
+                        intensity_grade = 5
+                    elif disc_intensity <= 0.30:
+                        intensity_grade = 4
+                    elif disc_intensity <= 0.45:
+                        intensity_grade = 3
+                    elif disc_nucleus_solidity < 0.60:
+                        intensity_grade =  2
+                    elif disc_nucleus_solidity >= 0.60:
+                        intensity_grade = 1
+                    else:
+                        intensity_grade = 0 # error
+                    
+                    # Thickness grade 
+                    if normalized_thickness < 0.3 or disc_solidity < 0.70:
+                        thickness_grade = 8
+                    elif normalized_thickness < 0.6 or disc_solidity < 0.80:
+                        thickness_grade = 7
+                    elif normalized_thickness < 0.9 or disc_solidity < 0.85:
+                        thickness_grade = 6
+                    else:
+                        thickness_grade = 1
+                    
+                    # Grade disc
+                    if thickness_grade == 1:
+                        grade = intensity_grade
+                    elif intensity_grade == 5:
+                        grade = thickness_grade
+                    else: # Mixed grade or double entry
+                        grade = f"{intensity_grade}/{thickness_grade}"
 
                 subject_data['discs'][disc]['grading'][group] = grade
             elif not do_grading:
