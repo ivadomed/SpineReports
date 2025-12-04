@@ -212,6 +212,9 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
     #create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
+    # Load spinereports resources path
+    resources_path = importlib.resources.files(sr_resources)
+
     # Load subject data
     subject_data = compute_metrics_subject(sub_folder)
     sub_name = sub_folder.name.split('_')[0]
@@ -246,13 +249,25 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
             if struc in ['foramens', 'discs', 'vertebrae']:
                 for struc_name in all_values[group][struc].keys():
                     for metric, values in all_values[group][struc][struc_name].items():
-                        # Discard values at 4 times the std from the median
-                        median_value = np.median(values)
-                        std_value = np.std(values)
-                        new_values = [v for v in values if v >= median_value - 4*std_value and v <= median_value + 4*std_value and v != -1]
-                        new_all_values[group][struc][struc_name][metric] = new_values
-                        median_value = np.median(new_values)
-                        std_value = np.std(new_values)
+                        median_added = False
+                        if os.path.exists(os.path.join(resources_path, 'csv', f'{struc}_median_{metric}.csv')):
+                            median_csv_path = os.path.join(resources_path, 'csv', f'{struc}_median_{metric}.csv')
+                            df_median = pd.read_csv(median_csv_path)
+                            med_dict = {name:{'median':float(med), 'std':float(std)} for name, med, std in zip(df_median[struc], df_median[metric], df_median[f'{metric}_std'])}
+                            if struc_name in med_dict:
+                                median_value = med_dict[struc_name]['median']
+                                std_value = med_dict[struc_name]['std']
+                                median_added = True
+                        
+                        if not median_added:
+                            # Discard values at 4 times the std from the median
+                            median_value = np.median(values)
+                            std_value = np.std(values)
+                            new_values = [v for v in values if v >= median_value - 4*std_value and v <= median_value + 4*std_value and v != -1]
+                            new_all_values[group][struc][struc_name][metric] = new_values
+                            median_value = np.median(new_values)
+                            std_value = np.std(new_values)
+                        
                         if group not in median_dict:
                             median_dict[group] = {}
                         if struc not in median_dict[group]:
