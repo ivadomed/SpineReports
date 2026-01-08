@@ -540,9 +540,13 @@ def measure_seg(img, seg, label, mapping):
                     row = {
                         "structure": "disc",
                         "name": struc,
-                        "eccentricity": properties['eccentricity'],
+                        "eccentricity_AP-RL": properties['eccentricity_AP-RL'],
+                        "eccentricity_AP-SI": properties['eccentricity_AP-SI'],
+                        "eccentricity_RL-SI": properties['eccentricity_RL-SI'],
                         "solidity": properties['solidity'],
-                        "nucleus_eccentricity": properties['nucleus_eccentricity'],
+                        "nucleus_eccentricity_AP-RL": properties['nucleus_eccentricity_AP-RL'],
+                        "nucleus_eccentricity_AP-SI": properties['nucleus_eccentricity_AP-SI'],
+                        "nucleus_eccentricity_RL-SI": properties['nucleus_eccentricity_RL-SI'],
                         "nucleus_solidity": properties['nucleus_solidity'],
                         "intensity_variation": properties['intensity_variation'],
                         "median_thickness": properties['median_thickness'],
@@ -593,7 +597,7 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
 
     # Fetch shape of nucleus (max intensity region)
     nucleus_coords = np.array([c for i, c in enumerate(coords) if values_3d[i] >= max_peak])
-    ellipsoid_nucl = fit_ellipsoid(np.array(nucleus_coords), centerline_deriv, min_size=8)
+    ellipsoid_nucl = fit_ellipsoid(np.array(nucleus_coords), centerline_deriv, min_size=3)
 
     # Extract disc volume
     voxel_volume = pr**3
@@ -604,9 +608,13 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
         'median_thickness': median_thickness*pr,
         'intensity_variation': (max_peak - min_peak),
         'volume': volume,
-        'eccentricity': ellipsoid['eccentricity'],
+        'eccentricity_AP-RL': ellipsoid['eccentricity_AP-RL'],
+        'eccentricity_AP-SI': ellipsoid['eccentricity_AP-SI'],
+        'eccentricity_RL-SI': ellipsoid['eccentricity_RL-SI'],
         'solidity': ellipsoid['solidity'],
-        'nucleus_eccentricity': ellipsoid_nucl['eccentricity'],
+        'nucleus_eccentricity_AP-RL': ellipsoid_nucl['eccentricity_AP-RL'],
+        'nucleus_eccentricity_AP-SI': ellipsoid_nucl['eccentricity_AP-SI'],
+        'nucleus_eccentricity_RL-SI': ellipsoid_nucl['eccentricity_RL-SI'],
         'nucleus_solidity': ellipsoid_nucl['solidity'],
     }
 
@@ -1137,7 +1145,7 @@ def fit_ellipsoid(coords, centerline_deriv, min_size=32):
         seg2d = morphology.remove_small_objects(seg2d, min_size=min_size).astype(int)
         props = measure.regionprops(measure.label(seg2d))
         if len(props) == 0:
-            raise ValueError("Error when fitting ellipse to disc")
+            return -1.0, -1.0, -1.0
         # choose largest region if multiple
         areas = [p.area for p in props]
         region = props[np.argmax(areas)]
@@ -1151,6 +1159,8 @@ def fit_ellipsoid(coords, centerline_deriv, min_size=32):
 
     # Compute 2D projection properties first
     seg_u1u2, solidity_u1u2, eccentricity_u1u2 = _proj_props(u1, u2)
+    seg_u1v, solidity_u1v, eccentricity_u1v = _proj_props(u1, v)
+    seg_u2v, solidity_u2v, eccentricity_u2v = _proj_props(u2, v)
 
     # Compute 3D solidity: ratio of object volume (voxel count) to convex hull volume
     # Need at least 4 non-coplanar points to build a 3D hull
@@ -1168,7 +1178,9 @@ def fit_ellipsoid(coords, centerline_deriv, min_size=32):
     ellipsoid = {
         'center': center,
         'rotation_matrix': rotation_matrix,
-        'eccentricity': eccentricity_u1u2,
+        'eccentricity_AP-RL': eccentricity_u1u2,
+        'eccentricity_AP-SI': eccentricity_u1v,
+        'eccentricity_RL-SI': eccentricity_u2v,
         'solidity': solidity_3d,
         'volume': volume
     }
