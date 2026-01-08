@@ -735,11 +735,22 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             slice_interp = subject_data[struc][struc_name].get('slice_interp', None)
             if slice_interp is not None:
                 metrics = [m for m in subject_data[struc][struc_name].keys() if m != 'slice_interp']
+                start_vert = last_disc.split('-')[0]
+                vertebra_level_int = np.array(slice_interp)//discs_gap
+                unique_levels = np.unique(vertebra_level_int)
+                vertebra_levels_names = {}
+                for level in unique_levels:
+                    vert_name = start_vert
+                    for i in range(int(level)):
+                        vert_name = previous_structure(vert_name)
+                    vertebra_levels_names[level] = vert_name
+                vertebra_levels = [vertebra_levels_names[int(vl)] for vl in vertebra_level_int]
                 for i in range(len(slice_interp)):
                     row = {
                         'structure': struc,
                         'structure_name': struc_name,
-                        'slice_interp': slice_interp[i]
+                        'slice_interp': slice_interp[i],
+                        'vertebra_level': vertebra_levels[i]
                     }
                     for metric in metrics:
                         values = subject_data[struc][struc_name][metric]
