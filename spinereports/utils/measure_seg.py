@@ -1011,19 +1011,33 @@ def measure_foramens(seg_foramen_data, canal_centerline, is_sacrum, pr):
         # Orient vector from canal to disc
         best_theta += np.pi
     
-    if is_sacrum:
-        coords = np.argwhere(seg_foramen_data > 0) # Now include sacrum coords for foramens projection
-
     n = np.cross(v, w(u1, u2, best_theta)) # normal vector of the plane
     n /= np.linalg.norm(n)
-    dot_product = np.dot(coords-canal_pos, n)
+    
+    if is_sacrum:
+        # Find maximum and minimum projection coordinate for vertebrae
+        vert_dot_product = np.dot(coords-canal_pos, n)
+        max_dot = vert_dot_product.max()
+        min_dot = vert_dot_product.min()
 
-    # Distinguish left-from-right
-    pos_coords = dot_product>0
-    if n[0] > 0: # Oriented from right to left RPI
-        halfs = {"left": coords[pos_coords], "right":coords[~pos_coords]}
+        # Now include sacrum coords for foramens projection
+        coords = np.argwhere(seg_foramen_data > 0)
+        dot_product = np.dot(coords-canal_pos, n)
+
+        pos_coords = (max_dot > dot_product) & (dot_product > 0)
+        neg_coords = (dot_product > min_dot) & (dot_product <= 0)
+
     else:
-        halfs = {"right": coords[pos_coords], "left":coords[~pos_coords]}
+        dot_product = np.dot(coords-canal_pos, n)
+
+        # Distinguish left-from-right
+        pos_coords = dot_product>0
+        neg_coords = ~pos_coords
+
+    if n[0] > 0: # Oriented from right to left RPI
+        halfs = {"left": coords[pos_coords], "right":coords[neg_coords]}
+    else:
+        halfs = {"right": coords[pos_coords], "left":coords[neg_coords]}
 
     # Project foramens
     foramens_areas = {}
@@ -1520,13 +1534,13 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-039_acq-lowresSag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-039_acq-lowresSag_T2w.nii.gz'
     
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-212_acq-lowresSag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-212_acq-lowresSag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-212_acq-lowresSag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-251_acq-lowresSag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-251_acq-lowresSag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-251_acq-lowresSag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-237_acq-lowresSag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-237_acq-lowresSag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-237_acq-lowresSag_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-237_acq-lowresSag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-237_acq-lowresSag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-237_acq-lowresSag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-088_acq-lowresSag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-088_acq-lowresSag_T2w.nii.gz'
