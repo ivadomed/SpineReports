@@ -36,6 +36,10 @@ def main():
         help='The folder where reports will be saved (required).'
     )
     parser.add_argument(
+        '--overwrite', action='store_true',
+        help='Whether to overwrite existing folders.'
+    )
+    parser.add_argument(
         '--prefix', '-p', type=str, default='',
         help='File prefix to work on.'
     )
@@ -67,6 +71,7 @@ def main():
     test_path = args.test_dir
     control_path = args.control_dir
     ofolder = args.ofolder
+    overwrite = args.overwrite
     prefix = args.prefix
     image_suffix = args.image_suffix
     seg_suffix = args.seg_suffix
@@ -85,6 +90,7 @@ def main():
             test_path = "{test_path}"
             control_path = "{control_path}"
             ofolder = "{ofolder}"
+            overwrite = "{overwrite}"
             prefix = "{prefix}"
             image_suffix = "{image_suffix}"
             seg_suffix = "{seg_suffix}"
@@ -99,6 +105,7 @@ def main():
         test_path=test_path,
         control_path=control_path,
         ofolder=ofolder,
+        overwrite=overwrite,
         prefix=prefix,
         image_suffix=image_suffix,
         seg_suffix=seg_suffix,
@@ -112,6 +119,7 @@ def run_spinereports(
         test_path: Path,
         control_path: Path,
         ofolder: Path,
+        overwrite: bool,
         prefix: str,
         image_suffix: str,
         seg_suffix: str,
@@ -130,7 +138,7 @@ def run_spinereports(
     # Measure segmentations if not already done
     test_metrics_path = test_path / "metrics_output"
     control_metrics_path = control_path / "metrics_output"
-    if not test_metrics_path.exists():
+    if not test_metrics_path.exists() or overwrite:
         if not quiet: print(f'\nMeasuring segmentations for test group in "{test_path}"...')
         measure_seg_mp(
             images_path=test_path / "input",
@@ -145,7 +153,7 @@ def run_spinereports(
             max_workers=max_workers,
             quiet=quiet,
         )
-    if not control_metrics_path.exists():
+    if not control_metrics_path.exists() or overwrite:
         if not quiet: print(f'\nMeasuring segmentations for control group in "{control_path}"...')
         measure_seg_mp(
             images_path=control_path / "input",
