@@ -484,6 +484,7 @@ def compute_discs_metrics(data_dict):
     # Compute Disc Height Index (DHI)
     for struc_name in data_dict['discs'].keys():
         top_vertebra = struc_name.split('-')[0]
+        data_dict['discs'][struc_name]['eccentricity'] = data_dict['discs'][struc_name]['eccentricity_AP-RL']
         if top_vertebra in data_dict['vertebrae']:
             # Normalize disc height with top vertebra AP_thickness
             data_dict['discs'][struc_name]['DHI'] = data_dict['discs'][struc_name]['median_thickness'] / data_dict['vertebrae'][top_vertebra]['AP_thickness']
@@ -1078,7 +1079,7 @@ def categorize_age_groups(age):
         return '60+'
 
 if __name__ == "__main__":
-    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
+    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/code/SpineReports/test' # '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
     control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
     ofolder = 'test'
     quiet = False
