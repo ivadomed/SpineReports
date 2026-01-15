@@ -684,7 +684,10 @@ def measure_csf(img_data, seg_csf_data):
         slice_values = img_data[slice_csf]
 
         # Extract most represented value
-        signal = np.percentile(slice_values, 90)
+        if slice_values.size == 0:
+            signal = 0
+        else:
+            signal = np.percentile(slice_values, 90)
 
         # Save values
         properties['slice_signal'][iz] = signal
