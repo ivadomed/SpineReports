@@ -64,7 +64,7 @@ INPUT_FOLDER/
 2. Run TotalSpineSeg to get generate the segmentations in the 1mm isotropic space
 > Perform this for both your control group and test group
 ```
-totalspineseg -i RAW_FOLDER -o TOTALSPINESEG_FOLDER --iso
+totalspineseg RAW_FOLDER TOTALSPINESEG_FOLDER --iso
 ```
 
 3. Run SpineReports to generate the reports
