@@ -894,21 +894,45 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     # Plot metrics
                     if add_group:
                         sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                        ax.tick_params(axis='x', rotation=45, labelsize=12)
-                        ax.set_xlabel('')
-                        fig.tight_layout()
+                        ax.set_yticks([])
                     if add_subject:
-                        ax.axvline(x=subject_value, color='red', linestyle='--')  
-                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        # Overlay subject value (red) on top of the distribution
+                        ax.axvline(x=subject_value, color='red', linestyle='--', linewidth=2, zorder=10)
+                        ax.scatter([subject_value], [0], color='red', s=60, zorder=11)
+                        try:
+                            subject_value_float = float(subject_value)
+                            if not np.isnan(subject_value_float):
+                                ax.text(
+                                    0.98,
+                                    0.92,
+                                    f"{subject_value_float:.3g}",
+                                    transform=ax.transAxes,
+                                    ha='right',
+                                    va='top',
+                                    color='red',
+                                    fontsize=25,
+                                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='red', alpha=0.85),
+                                    zorder=25,
+                                )
+                        except Exception:
+                            pass
+                        if not add_group:
+                            ax.set_ylim(-0.5, 0.5)
+                            ax.set_yticks([])
+                            span = max(1e-6, abs(float(subject_value)) * 0.2)
+                            ax.set_xlim(float(subject_value) - span, float(subject_value) + span)
+
+                    if add_group or add_subject:
+                        ax.tick_params(axis='x', rotation=45, labelsize=25)
                         ax.set_xlabel('')
                         fig.tight_layout()
-
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
             plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            plt.close(fig)
 
         # Create discs figures
         for struc in ['discs']:
@@ -971,21 +995,44 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     # Plot metrics
                     if add_group:
                         sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                        ax.tick_params(axis='x', rotation=45, labelsize=12)
-                        ax.set_xlabel('')
-                        fig.tight_layout()
+                        ax.set_yticks([])
                     if add_subject:
-                        ax.axvline(x=subject_value, color='red', linestyle='--')  
-                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.axvline(x=subject_value, color='red', linestyle='--', linewidth=2, zorder=10)
+                        ax.scatter([subject_value], [0], color='red', s=60, zorder=11)
+                        try:
+                            subject_value_float = float(subject_value)
+                            if not np.isnan(subject_value_float):
+                                ax.text(
+                                    0.98,
+                                    0.92,
+                                    f"{subject_value_float:.3g}",
+                                    transform=ax.transAxes,
+                                    ha='right',
+                                    va='top',
+                                    color='red',
+                                    fontsize=35,
+                                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='red', alpha=0.85),
+                                    zorder=35,
+                                )
+                        except Exception:
+                            pass
+                        if not add_group:
+                            ax.set_ylim(-0.5, 0.5)
+                            ax.set_yticks([])
+                            span = max(1e-6, abs(float(subject_value)) * 0.2)
+                            ax.set_xlim(float(subject_value) - span, float(subject_value) + span)
+
+                    if add_group or add_subject:
+                        ax.tick_params(axis='x', rotation=45, labelsize=35)
                         ax.set_xlabel('')
                         fig.tight_layout()
-
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
             plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            plt.close(fig)
         
         for struc in ['vertebrae']:
             # Create a subplot for each subject and overlay a red line corresponding to their value
@@ -1041,21 +1088,44 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     # Plot metrics
                     if add_group:
                         sns.violinplot(x='values', data=all_values_data, ax=ax, cut=0, bw_method=0.7, color='gray', alpha=0.2)
-                        ax.tick_params(axis='x', rotation=45, labelsize=12)
-                        ax.set_xlabel('')
-                        fig.tight_layout()
+                        ax.set_yticks([])
                     if add_subject:
-                        ax.axvline(x=subject_value, color='red', linestyle='--')  
-                        ax.tick_params(axis='x', rotation=45, labelsize=12)
+                        ax.axvline(x=subject_value, color='red', linestyle='--', linewidth=2, zorder=10)
+                        ax.scatter([subject_value], [0], color='red', s=60, zorder=11)
+                        try:
+                            subject_value_float = float(subject_value)
+                            if not np.isnan(subject_value_float):
+                                ax.text(
+                                    0.98,
+                                    0.92,
+                                    f"{subject_value_float:.3g}",
+                                    transform=ax.transAxes,
+                                    ha='right',
+                                    va='top',
+                                    color='red',
+                                    fontsize=25,
+                                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='red', alpha=0.85),
+                                    zorder=25,
+                                )
+                        except Exception:
+                            pass
+                        if not add_group:
+                            ax.set_ylim(-0.5, 0.5)
+                            ax.set_yticks([])
+                            span = max(1e-6, abs(float(subject_value)) * 0.2)
+                            ax.set_xlim(float(subject_value) - span, float(subject_value) + span)
+
+                    if add_group or add_subject:
+                        ax.tick_params(axis='x', rotation=45, labelsize=25)
                         ax.set_xlabel('')
                         fig.tight_layout()
-
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
             plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            plt.close(fig)
 
 
 def convert_str_to_list(string):
