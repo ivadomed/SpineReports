@@ -825,7 +825,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                             ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
                             ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=12, color='black', alpha=0.7)
                             top_pos += discs_gap
-                            disc = previous_structure(disc)
+                            if disc != 'C1-C2':
+                                disc = previous_structure(disc)
 
                         ax.set_xlabel('')
                         fig.tight_layout()
@@ -1079,8 +1080,8 @@ def categorize_age_groups(age):
         return '60+'
 
 if __name__ == "__main__":
-    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/code/SpineReports/test' # '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
-    control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
+    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/metrics_output' # '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
+    control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/metrics_output'
     ofolder = 'test'
     quiet = False
     generate_reports(
