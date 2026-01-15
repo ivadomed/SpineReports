@@ -416,9 +416,12 @@ def measure_seg(img, seg, label, mapping):
                 foramens_name = f'foramens_{top_vert}-{bottom_vert}'
 
                 # Init foramen segmentation
-                disc_mask = (seg.data == mapping[f'{top_vert}-{bottom_vert}'])
-                seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
-                seg_bin.data[disc_mask] = 1
+                if f'{top_vert}-{bottom_vert}' != 'C1-C2':
+                    disc_mask = (seg.data == mapping[f'{top_vert}-{bottom_vert}'])
+                    seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
+                    seg_bin.data[disc_mask] = 1
+                else:
+                    seg_foramen_data = np.zeros_like(seg.data).astype(int)
 
                 # Compute vertebrae properties
                 for vert in [top_vert, bottom_vert]:
@@ -684,7 +687,10 @@ def measure_csf(img_data, seg_csf_data):
         slice_values = img_data[slice_csf]
 
         # Extract most represented value
-        signal = np.percentile(slice_values, 90)
+        if slice_values.size == 0:
+            signal = 0
+        else:
+            signal = np.percentile(slice_values, 90)
 
         # Save values
         properties['slice_signal'][iz] = signal
@@ -1534,9 +1540,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-039_acq-lowresSag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-039_acq-lowresSag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-251_acq-lowresSag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-251_acq-lowresSag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-251_acq-lowresSag_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-251_acq-lowresSag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-251_acq-lowresSag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-251_acq-lowresSag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-237_acq-lowresSag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-237_acq-lowresSag_T2w.nii.gz'
@@ -1557,6 +1563,10 @@ if __name__ == '__main__':
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
+    
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
 
     ofolder_path = 'test'
 
