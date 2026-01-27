@@ -290,6 +290,9 @@ def _measure_seg(
     except IndexError as e:
         print(f'IndexError: {seg_path}, {e}')
         return
+    except Exception as e:
+        print(f'Error: {seg_path}, {e}')
+        return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
