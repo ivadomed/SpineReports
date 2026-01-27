@@ -573,7 +573,12 @@ def rescale_canal(all_values, rev_mapping):
                     if metric in ['slice_nb', 'disc_level']:
                         continue
                     for subj_idx in range(len(all_values[key][struc][struc_name][metric])):
-                        interp_values, slice_interp = rescale_with_discs(all_values[key][struc][struc_name]['disc_level'][subj_idx], all_values[key][struc][struc_name][metric][subj_idx], rev_mapping, discs_gap, last_disc)
+                        try:
+                            interp_values, slice_interp = rescale_with_discs(all_values[key][struc][struc_name]['disc_level'][subj_idx], all_values[key][struc][struc_name][metric][subj_idx], rev_mapping, discs_gap, last_disc)
+                        except TypeError as e:
+                            print(f"Error rescaling subject {subj_idx} for {struc_name} metric {metric}: {e}")
+                            interp_values = []
+                            slice_interp = []
                         new_values[key][struc][struc_name][metric][subj_idx] = interp_values
                         if 'slice_interp' not in new_values[key][struc][struc_name]:
                             new_values[key][struc][struc_name]['slice_interp'] = []
