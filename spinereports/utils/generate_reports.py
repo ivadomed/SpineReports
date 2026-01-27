@@ -624,10 +624,19 @@ def rescale_with_discs(disc_levels, metric_list, rev_mapping, gap, last_disc):
 
     start_disc_gap = 0
     disc = last_disc
-    while disc != rev_mapping[int(subj_disc_values[0])]:
-        start_disc_gap += gap
-        disc = previous_structure(disc)
-    slice_interp += list(range(start_disc_gap, start_disc_gap + len(interp_values)))
+    mapping = {v: k for k, v in rev_mapping.items()}
+    if mapping[last_disc] > int(subj_disc_values[0]):
+        while disc != rev_mapping[int(subj_disc_values[0])]:
+            start_disc_gap += gap
+            disc = previous_structure(disc)
+        slice_interp += list(range(start_disc_gap, start_disc_gap + len(interp_values)))
+    else: # Handle case where test subject canal longer than control
+        d = rev_mapping[int(subj_disc_values[0])]
+        while d != last_disc:
+            start_disc_gap += gap
+            d = previous_structure(d)
+        interp_values = interp_values[start_disc_gap:]
+        slice_interp = list(range(len(interp_values)))
     return interp_values, slice_interp
 
 def previous_structure(structure_name):
