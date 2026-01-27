@@ -871,6 +871,8 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     # Compute thickness profile vertebral body
     coordinate_system = np.stack((u, w(u1, u2, best_theta), v), axis=0)
     bin_size = max(2//pr, 1) # Put 1 bin per 2 mm
+    if not body_coords.any():
+        return None, None, None, False
     median_thickness = compute_thickness_profile(body_coords, coordinate_system, bin_size=bin_size)
     
     if np.isnan(median_thickness):
@@ -1185,11 +1187,14 @@ def fit_ellipsoid(coords, centerline_deriv, min_size=32):
     # Compute 3D solidity: ratio of object volume (voxel count) to convex hull volume
     # Need at least 4 non-coplanar points to build a 3D hull
     if coords_centered.shape[0] >= 4:
-        hull = ConvexHull(coords_centered)
-        hull_vol = float(getattr(hull, "volume", 0.0))
-        if hull_vol > 1e-8:
-            solidity_3d = float(volume) / hull_vol
-        else:
+        try:
+            hull = ConvexHull(coords_centered)
+            hull_vol = float(getattr(hull, "volume", 0.0))
+            if hull_vol > 1e-8:
+                solidity_3d = float(volume) / hull_vol
+            else:
+                solidity_3d = 1.0
+        except Exception:
             solidity_3d = 1.0
     else:
         solidity_3d = 1.0
