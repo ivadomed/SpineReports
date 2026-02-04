@@ -554,6 +554,8 @@ def measure_seg(img, seg, label, mapping):
                         "nucleus_eccentricity_AP-SI": properties['nucleus_eccentricity_AP-SI'],
                         "nucleus_eccentricity_RL-SI": properties['nucleus_eccentricity_RL-SI'],
                         "nucleus_solidity": properties['nucleus_solidity'],
+                        "nucleus_volume": properties['nucleus_volume'],
+                        "nucleus_median_thickness": properties['nucleus_median_thickness'],
                         "intensity_variation": properties['intensity_variation'],
                         "median_thickness": properties['median_thickness'],
                         "center": properties['center'],
@@ -604,10 +606,12 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     # Fetch shape of nucleus (max intensity region)
     nucleus_coords = np.array([c for i, c in enumerate(coords) if values_3d[i] >= max_peak])
     ellipsoid_nucl = fit_ellipsoid(np.array(nucleus_coords), centerline_deriv, min_size=3)
+    nucleus_thickness = compute_thickness_profile(nucleus_coords, ellipsoid_nucl['rotation_matrix'], bin_size=bin_size)
 
     # Extract disc volume
     voxel_volume = pr**3
     volume = ellipsoid['volume']*voxel_volume # mm3
+    nucleus_volume = ellipsoid_nucl['volume']*voxel_volume # mm3
 
     properties = {
         'center': np.round(ellipsoid['center']),
@@ -622,6 +626,8 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
         'nucleus_eccentricity_AP-SI': ellipsoid_nucl['eccentricity_AP-SI'],
         'nucleus_eccentricity_RL-SI': ellipsoid_nucl['eccentricity_RL-SI'],
         'nucleus_solidity': ellipsoid_nucl['solidity'],
+        'nucleus_volume': nucleus_volume,
+        'nucleus_median_thickness': nucleus_thickness*pr,
     }
 
     # Center volume for visualization
