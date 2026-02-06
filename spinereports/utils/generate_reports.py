@@ -369,23 +369,23 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
     imgs_paths = [test_sub_folder / 'imgs' for test_sub_folder in test_sub_folders]
     ofolder_subjects = [ofolder_path / subject for subject in os.listdir(test_path)]
 
-    # process_map(
-    #     partial(
-    #         create_figures,
-    #         all_values=all_values,
-    #         demographics_test=demographics_test,
-    #         rev_mapping=rev_mapping,
-    #         discs_gap=discs_gap,
-    #         last_disc=last_disc
-    #     ),
-    #     test_sub_folders,
-    #     imgs_paths,
-    #     ofolder_subjects,
-    #     max_workers=max_workers,
-    #     chunksize=1,
-    #     disable=quiet,
-    # )
-    create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
+    process_map(
+        partial(
+            create_figures,
+            all_values=all_values,
+            demographics_test=demographics_test,
+            rev_mapping=rev_mapping,
+            discs_gap=discs_gap,
+            last_disc=last_disc
+        ),
+        test_sub_folders,
+        imgs_paths,
+        ofolder_subjects,
+        max_workers=max_workers,
+        chunksize=1,
+        disable=quiet,
+    )
+    #create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
     # Load spinereports resources path
