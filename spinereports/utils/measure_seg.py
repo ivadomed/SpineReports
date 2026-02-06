@@ -15,6 +15,7 @@ import csv
 import warnings
 import cv2
 from sklearn.mixture import GaussianMixture
+import colorsys
 
 from spinereports.utils.image import Image, resample_nib, zeros_like
 from skimage.morphology import ball, binary_dilation
@@ -25,6 +26,22 @@ from scipy.spatial import ConvexHull
 
 
 warnings.filterwarnings("ignore")
+
+
+def _build_fixed_label_lut(max_label: int) -> np.ndarray:
+    """Return a deterministic RGB lookup-table for label values [0..max_label]."""
+    if max_label < 0:
+        max_label = 0
+    lut = np.zeros((max_label + 1, 3), dtype=np.uint8)
+    lut[0] = (0, 0, 0)
+    for label_value in range(1, max_label + 1):
+        # Golden-ratio spacing for stable, well-separated hues.
+        hue = (label_value * 0.61803398875) % 1.0
+        sat = 0.75
+        val = 0.95
+        r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+        lut[label_value] = (int(r * 255), int(g * 255), int(b * 255))
+    return lut
 
 
 def n4_bias_field_correction(image_data, mask, shrink_factor=2, number_of_histogram_bins=200, 
@@ -274,6 +291,8 @@ def _measure_seg(
     seg = Image(str(seg_path)).change_orientation('RPI')
     label = Image(str(label_path)).change_orientation('RPI')
 
+    metrics = {}
+    imgs = {}
     try:
         metrics, imgs = measure_seg(
             img=img,
@@ -301,6 +320,41 @@ def _measure_seg(
     imgs_folder_path = ofolder_path / 'imgs'
     csv_folder_path.mkdir(parents=True, exist_ok=True)
     imgs_folder_path.mkdir(parents=True, exist_ok=True)
+
+    # Save sagittal image and segmentation
+    sagittal_slice = img.change_orientation('RSP').data[img.data.shape[0] // 2, :, :]
+    sagittal_slice_p5 = np.percentile(sagittal_slice, 5)
+    sagittal_slice_p95 = np.percentile(sagittal_slice, 95)
+    sagittal_slice = (sagittal_slice - sagittal_slice_p5) / (sagittal_slice_p95 - sagittal_slice_p5 + 1e-8)
+    sagittal_u8 = np.clip(sagittal_slice * 255.0, 0, 255).astype(np.uint8)
+    cv2.imwrite(str(imgs_folder_path / 'img.png'), sagittal_u8)
+
+    # Also save a sagittal image with segmentation overlay using a fixed colormap.
+    seg_sag = seg.change_orientation('RSP').data[seg.data.shape[0] // 2, :, :]
+    seg_sag = np.nan_to_num(seg_sag, nan=0).astype(np.int32)
+    max_label = 0
+    try:
+        max_label = int(max(mapping.values()))
+    except Exception:
+        max_label = 0
+    max_label = int(max(max_label, int(seg_sag.max()) if seg_sag.size else 0))
+    lut_rgb = _build_fixed_label_lut(max_label)
+    seg_rgb = lut_rgb[np.clip(seg_sag, 0, max_label)]
+
+    base_rgb = cv2.cvtColor(sagittal_u8, cv2.COLOR_GRAY2RGB)
+    overlay_rgb = base_rgb.copy()
+    mask = seg_sag > 0
+    alpha = 0.75
+    if np.any(mask):
+        overlay_rgb[mask] = (
+            (1.0 - alpha) * base_rgb[mask].astype(np.float32)
+            + alpha * seg_rgb[mask].astype(np.float32)
+        ).astype(np.uint8)
+
+    # OpenCV expects BGR
+    overlay_bgr = overlay_rgb[..., ::-1]
+    cv2.imwrite(str(imgs_folder_path / 'seg_overlay.png'), overlay_bgr)
+    cv2.imwrite(str(imgs_folder_path / 'raw_and_seg_overlay.png'), np.concatenate((base_rgb, overlay_bgr), axis=1))
 
     # Save csv files
     for struc in metrics.keys():
@@ -554,6 +608,8 @@ def measure_seg(img, seg, label, mapping):
                         "nucleus_eccentricity_AP-SI": properties['nucleus_eccentricity_AP-SI'],
                         "nucleus_eccentricity_RL-SI": properties['nucleus_eccentricity_RL-SI'],
                         "nucleus_solidity": properties['nucleus_solidity'],
+                        "nucleus_volume": properties['nucleus_volume'],
+                        "nucleus_median_thickness": properties['nucleus_median_thickness'],
                         "intensity_variation": properties['intensity_variation'],
                         "median_thickness": properties['median_thickness'],
                         "center": properties['center'],
@@ -604,10 +660,12 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     # Fetch shape of nucleus (max intensity region)
     nucleus_coords = np.array([c for i, c in enumerate(coords) if values_3d[i] >= max_peak])
     ellipsoid_nucl = fit_ellipsoid(np.array(nucleus_coords), centerline_deriv, min_size=3)
+    nucleus_thickness = compute_thickness_profile(nucleus_coords, ellipsoid_nucl['rotation_matrix'], bin_size=bin_size)
 
     # Extract disc volume
     voxel_volume = pr**3
     volume = ellipsoid['volume']*voxel_volume # mm3
+    nucleus_volume = ellipsoid_nucl['volume']*voxel_volume # mm3
 
     properties = {
         'center': np.round(ellipsoid['center']),
@@ -622,6 +680,8 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
         'nucleus_eccentricity_AP-SI': ellipsoid_nucl['eccentricity_AP-SI'],
         'nucleus_eccentricity_RL-SI': ellipsoid_nucl['eccentricity_RL-SI'],
         'nucleus_solidity': ellipsoid_nucl['solidity'],
+        'nucleus_volume': nucleus_volume,
+        'nucleus_median_thickness': nucleus_thickness*pr,
     }
 
     # Center volume for visualization

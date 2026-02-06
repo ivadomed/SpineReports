@@ -153,7 +153,7 @@ def run_spinereports(
             max_workers=max_workers,
             quiet=quiet,
         )
-    if not control_metrics_path.exists() or overwrite:
+    if not control_metrics_path.exists() or (overwrite and control_metrics_path != test_metrics_path):
         if not quiet: print(f'\nMeasuring segmentations for control group in "{control_path}"...')
         measure_seg_mp(
             images_path=control_path / "input",

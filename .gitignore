@@ -179,3 +179,4 @@ cython_debug/
 # More
 *.png
 *.csv
+*.pdf
