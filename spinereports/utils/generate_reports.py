@@ -16,6 +16,7 @@ import totalspineseg.resources as tss_resources
 import spinereports.resources as sr_resources
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime
+from matplotlib.ticker import MaxNLocator
 
 
 def _font_scale_for_grid(page_size, nrows: int, ncols: int, base_cell_in: float = 4.5) -> float:
@@ -36,6 +37,30 @@ def _font_scale_for_grid(page_size, nrows: int, ncols: int, base_cell_in: float 
 def _fs(base_points: float, scale: float, min_fs: int = 8, max_fs: int = 120) -> int:
     """Scaled fontsize in points (matplotlib fontsize units)."""
     return int(np.clip(base_points * float(scale), min_fs, max_fs))
+
+
+def _apply_report_grid_layout(
+    fig: plt.Figure,
+    *,
+    scale: float,
+    rotated_xticks: bool,
+):
+    """Apply consistent spacing so plots use page width and ticks don't overlap."""
+    scale = float(scale) if scale else 1.0
+    inv = max(0.0, (1.0 / max(scale, 1e-6)) - 1.0)
+
+    # Use nearly full page width, reserve bottom for tick labels.
+    left = 0.015
+    right = 0.995
+    bottom = 0.07 + (0.07 if rotated_xticks else 0.03) + 0.02 * inv
+    bottom = float(np.clip(bottom, 0.08, 0.22))
+    top = 0.90
+
+    # Increase spacing when cells get small.
+    wspace = float(np.clip(0.28 + 0.20 * inv, 0.28, 0.70))
+    hspace = float(np.clip(0.40 + 0.30 * inv + (0.18 if rotated_xticks else 0.0), 0.40, 1.10))
+
+    fig.subplots_adjust(left=left, right=right, bottom=bottom, top=top, wspace=wspace, hspace=hspace)
 
 
 def _compute_report_page_size(subject_data, all_values_df_group, metrics_dict, resources_path):
@@ -61,7 +86,8 @@ def _compute_report_page_size(subject_data, all_values_df_group, metrics_dict, r
         max_w = max(max_w, rule['w'] * ncols)
         max_h = max(max_h, rule['h'] * nrows)
 
-    return (max_w, max_h)
+    # Make figures a bit wider and leave room for spacing/ticks.
+    return (max_w * 1.08, max_h * 1.03)
 
 
 def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str, subject_img: str):
@@ -81,10 +107,10 @@ def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str,
     # Scale cover fonts with page size (relative to A4 landscape).
     base_w, base_h = 11.69, 8.27
     cover_scale = float(np.clip(min(page_size[0] / base_w, page_size[1] / base_h), 0.7, 2.2))
-    header_ax.text(0.00, 1.00, 'SpineReports', fontsize=_fs(80, cover_scale, min_fs=16, max_fs=90), fontweight='bold', ha='left', va='top')
-    header_ax.text(0.00, 0.40, f"Subject: {subject_name}", fontsize=_fs(40, cover_scale, min_fs=11, max_fs=44), ha='left', va='top')
-    header_ax.text(0.00, 0.05, f"Reference group: {group}", fontsize=_fs(35, cover_scale, min_fs=10, max_fs=40), ha='left', va='bottom', color='gray')
-    header_ax.text(1.00, 1.00, datetime.now().strftime('%Y-%m-%d %H:%M'), fontsize=_fs(50, cover_scale, min_fs=8, max_fs=60), ha='right', va='top', color='gray')
+    header_ax.text(0.00, 1.00, 'SpineReports', fontsize=_fs(130, cover_scale, min_fs=16, max_fs=150), fontweight='bold', ha='left', va='top')
+    header_ax.text(0.00, 0.40, f"Subject: {subject_name}", fontsize=_fs(100, cover_scale, min_fs=11, max_fs=110), ha='left', va='top')
+    header_ax.text(0.00, 0.05, f"Reference group: {group}", fontsize=_fs(90, cover_scale, min_fs=10, max_fs=100), ha='left', va='bottom', color='gray')
+    header_ax.text(1.00, 1.00, datetime.now().strftime('%Y-%m-%d %H:%M'), fontsize=_fs(100, cover_scale, min_fs=8, max_fs=110), ha='right', va='top', color='gray')
 
     subject_img_path = Path(subject_img) if subject_img else None
     if subject_img_path and subject_img_path.exists():
@@ -915,7 +941,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             header_fs = _fs(45, scale, min_fs=12, max_fs=90)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
             suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
-            vert_label_fs = _fs(15, scale, min_fs=6, max_fs=42)
+            canal_tick_fs = _fs(18, scale, min_fs=10, max_fs=80)
             fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             axes = axes.flatten()
             idx = 0
@@ -949,15 +975,24 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
                         # Plot subject
                         ax.plot(x_subject, y_subject, color='red', linewidth=2)
+
+                        # Larger/more readable ticks for canal
+                        tick_len = float(np.clip(6.0 * scale, 3.0, 12.0))
+                        tick_w = float(np.clip(1.2 * scale, 0.8, 2.5))
+                        ax.tick_params(axis='both', labelsize=canal_tick_fs, length=tick_len, width=tick_w, pad=2)
+                        ax.xaxis.set_major_locator(MaxNLocator(nbins=7))
+                        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
                         
                         # Add vertebrae labels
                         disc = last_disc
                         top_pos = 0
                         nb_discs = all_values_data['slice_interp'].max()//discs_gap
+                        # Leave some headroom for vertebra labels
+                        ax.margins(y=0.18)
                         for i in range(nb_discs+1):
                             top_vert = disc.split('-')[0]
                             ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
-                            ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=vert_label_fs, color='black', alpha=0.7)
+                            ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=canal_tick_fs, color='black', alpha=0.7)
                             top_pos += discs_gap
                             if disc != 'C1-C2':
                                 disc = previous_structure(disc)
@@ -967,8 +1002,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                         ax.set_axis_off()
                     idx += 1
 
-            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
-            fig.subplots_adjust(top=0.93)
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
+            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=False)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
@@ -1066,14 +1101,16 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
                     if add_group or add_subject:
                         ax.tick_params(axis='x', rotation=45, labelsize=tick_fs)
+                        for lbl in ax.get_xticklabels():
+                            lbl.set_horizontalalignment('right')
                         ax.set_xlabel('')
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
-            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
-            fig.subplots_adjust(top=0.93)
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
+            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
@@ -1086,13 +1123,12 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 4
-            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
-            fig.subplots_adjust(bottom=0)
             scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
             header_fs = _fs(45, scale, min_fs=12, max_fs=100)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=70)
             value_fs = _fs(25, scale, min_fs=8, max_fs=70)
             suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
+            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             axes = axes.flatten()
             idx = 0
             for i in range(ncols):
@@ -1173,14 +1209,16 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
                     if add_group or add_subject:
                         ax.tick_params(axis='x', rotation=45, labelsize=tick_fs)
+                        for lbl in ax.get_xticklabels():
+                            lbl.set_horizontalalignment('right')
                         ax.set_xlabel('')
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
-            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
-            fig.subplots_adjust(top=0.93)
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
+            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
@@ -1273,14 +1311,16 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
                     if add_group or add_subject:
                         ax.tick_params(axis='x', rotation=45, labelsize=tick_fs)
+                        for lbl in ax.get_xticklabels():
+                            lbl.set_horizontalalignment('right')
                         ax.set_xlabel('')
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
-            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
-            fig.subplots_adjust(top=0.93)
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
+            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
