@@ -14,6 +14,8 @@ import copy
 from tqdm import tqdm
 import totalspineseg.resources as tss_resources
 import spinereports.resources as sr_resources
+from matplotlib.backends.backend_pdf import PdfPages
+from datetime import datetime
 
 def main():
     # Description and arguments
@@ -1140,6 +1142,106 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
             plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
             plt.close(fig)
+        
+        # Generate PDF report
+        output_path = Path(ofolder_path) / f'report_{group}.pdf'
+        generate_pdf(subject_name=Path(ofolder_path).name, group=group, subject_img=str(imgs_path / f'raw_and_seg_overlay.png'), figures_path=images_dir, out_path=output_path)
+
+def generate_pdf(subject_name, group, subject_img, figures_path, out_path):
+    figures_path = Path(figures_path)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _safe_imread(path: Path):
+        try:
+            return plt.imread(str(path))
+        except Exception:
+            return None
+
+    # Prefer a deterministic order for the main summary pages.
+    preferred_structures = ['canal', 'discs', 'vertebrae', 'foramens']
+    structures_names = ['Spinal canal', 'Intervertebral discs', 'Vertebrae', 'Intervertebral foramens']
+    preferred_files = []
+    for struc in preferred_structures:
+        candidate = figures_path / f"compared_{group}_{struc}.png"
+        if candidate.exists():
+            preferred_files.append(candidate)
+
+    # Fallback: include any compared_*.png found in the folder.
+    if not preferred_files:
+        preferred_files = sorted(figures_path.glob('compared_*.png'))
+
+    # PDF page size: A4 landscape
+    page_size = (11.69, 8.27)
+
+    with PdfPages(str(out_path)) as pdf:
+        # Cover page
+        fig = plt.figure(figsize=page_size)
+        ax = fig.add_axes([0.06, 0.12, 0.88, 0.78])
+        ax.axis('off')
+
+        fig.text(
+            0.06,
+            0.94,
+            'SpineReports',
+            fontsize=26,
+            fontweight='bold',
+            ha='left',
+            va='top',
+        )
+        fig.text(
+            0.06,
+            0.85,
+            f"Subject: {subject_name}",
+            fontsize=16,
+            ha='left',
+            va='top',
+        )
+        fig.text(
+            0.94,
+            0.94,
+            datetime.now().strftime('%Y-%m-%d %H:%M'),
+            fontsize=10,
+            ha='right',
+            va='top',
+            color='gray',
+        )
+
+        subject_img_path = Path(subject_img) if subject_img else None
+        if subject_img_path and subject_img_path.exists():
+            img = _safe_imread(subject_img_path)
+            if img is not None:
+                ax.imshow(img)
+        else:
+            ax.text(
+                0.5,
+                0.5,
+                'Subject sagittal overlay image not found.',
+                ha='center',
+                va='center',
+                fontsize=14,
+                color='gray',
+                transform=ax.transAxes,
+            )
+
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
+
+        # Summary pages
+        for page_idx, png_path in enumerate(preferred_files, start=1):
+            fig = plt.figure(figsize=page_size)
+            ax = fig.add_axes([0.03, 0.06, 0.94, 0.88])
+            ax.axis('off')
+            img = _safe_imread(png_path)
+            if img is not None:
+                ax.imshow(img)
+
+            title = structures_names[page_idx - 1]
+            fig.text(0.03, 0.97, title, fontsize=20, fontweight='bold', ha='left', va='top')
+            fig.text(0.97, 0.02, f"Page {page_idx}", fontsize=9, ha='right', va='bottom', color='gray')
+
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close(fig)
 
 
 def convert_str_to_list(string):
@@ -1164,8 +1266,8 @@ def categorize_age_groups(age):
         return '60+'
 
 if __name__ == "__main__":
-    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/metrics_output' # '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
-    control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/metrics_output'
+    test_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/metrics_output' # '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/metrics_output'
+    control_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/metrics_output'
     ofolder = 'test'
     quiet = False
     generate_reports(
