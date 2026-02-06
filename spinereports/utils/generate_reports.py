@@ -63,6 +63,58 @@ def _apply_report_grid_layout(
     fig.subplots_adjust(left=left, right=right, bottom=bottom, top=top, wspace=wspace, hspace=hspace)
 
 
+def _apply_report_outer_margins(fig: plt.Figure, *, scale: float, rotated_xticks: bool):
+    """Apply margins without overriding GridSpec spacing."""
+    scale = float(scale) if scale else 1.0
+    inv = max(0.0, (1.0 / max(scale, 1e-6)) - 1.0)
+
+    left = 0.015
+    right = 0.995
+    bottom = 0.07 + (0.07 if rotated_xticks else 0.03) + 0.02 * inv
+    bottom = float(np.clip(bottom, 0.08, 0.24))
+    top = 0.90
+    fig.subplots_adjust(left=left, right=right, bottom=bottom, top=top)
+
+
+def _axes_with_big_header_row(
+    fig: plt.Figure,
+    *,
+    nrows: int,
+    ncols: int,
+    header_height: float = 1.9,
+    header_wspace: float = 0.05,
+    body_wspace: float = 0.28,
+    body_hspace: float = 0.55,
+    outer_hspace: float = 0.06,
+):
+    """Create axes in row-major order with a bigger first row.
+
+    This keeps image aspect ratio intact, while making the header row axes
+    larger (both height and effective width via smaller header wspace).
+    Returns a 1D numpy array of axes ordered like plt.subplots(...).flatten().
+    """
+    nrows = int(nrows)
+    ncols = int(ncols)
+    if nrows < 1 or ncols < 1:
+        raise ValueError('nrows/ncols must be >= 1')
+
+    if nrows == 1:
+        gs_header = fig.add_gridspec(1, ncols, wspace=header_wspace)
+        return np.array([fig.add_subplot(gs_header[0, c]) for c in range(ncols)])
+
+    outer = fig.add_gridspec(2, 1, height_ratios=[header_height, nrows - 1], hspace=outer_hspace)
+    gs_header = outer[0].subgridspec(1, ncols, wspace=header_wspace)
+    gs_body = outer[1].subgridspec(nrows - 1, ncols, wspace=body_wspace, hspace=body_hspace)
+
+    axes = []
+    for c in range(ncols):
+        axes.append(fig.add_subplot(gs_header[0, c]))
+    for r in range(nrows - 1):
+        for c in range(ncols):
+            axes.append(fig.add_subplot(gs_body[r, c]))
+    return np.array(axes)
+
+
 def _compute_report_page_size(subject_data, all_values_df_group, metrics_dict, resources_path):
     """Compute a uniform (w,h) page size for all pages in one report group."""
     # Match the sizing heuristics used in the original plotting code.
@@ -86,8 +138,9 @@ def _compute_report_page_size(subject_data, all_values_df_group, metrics_dict, r
         max_w = max(max_w, rule['w'] * ncols)
         max_h = max(max_h, rule['h'] * nrows)
 
-    # Make figures a bit wider and leave room for spacing/ticks.
-    return (max_w * 1.08, max_h * 1.03)
+    # Make figures wider and leave room for spacing/ticks.
+    # Extra width helps canal vertebra-label readability.
+    return (max_w * 1.18, max_h * 1.03)
 
 
 def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str, subject_img: str):
@@ -108,7 +161,7 @@ def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str,
     base_w, base_h = 11.69, 8.27
     cover_scale = float(np.clip(min(page_size[0] / base_w, page_size[1] / base_h), 0.7, 2.2))
     header_ax.text(0.00, 1.00, 'SpineReports', fontsize=_fs(130, cover_scale, min_fs=16, max_fs=150), fontweight='bold', ha='left', va='top')
-    header_ax.text(0.00, 0.40, f"Subject: {subject_name}", fontsize=_fs(100, cover_scale, min_fs=11, max_fs=110), ha='left', va='top')
+    header_ax.text(0.00, 0.60, f"Subject: {subject_name}", fontsize=_fs(100, cover_scale, min_fs=11, max_fs=110), ha='left', va='top')
     header_ax.text(0.00, 0.05, f"Reference group: {group}", fontsize=_fs(90, cover_scale, min_fs=10, max_fs=100), ha='left', va='bottom', color='gray')
     header_ax.text(1.00, 1.00, datetime.now().strftime('%Y-%m-%d %H:%M'), fontsize=_fs(100, cover_scale, min_fs=8, max_fs=110), ha='right', va='top', color='gray')
 
@@ -940,7 +993,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
             header_fs = _fs(45, scale, min_fs=12, max_fs=90)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
-            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
+            suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
             canal_tick_fs = _fs(18, scale, min_fs=10, max_fs=80)
             fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             axes = axes.flatten()
@@ -989,10 +1042,24 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                         nb_discs = all_values_data['slice_interp'].max()//discs_gap
                         # Leave some headroom for vertebra labels
                         ax.margins(y=0.18)
+                        vertebra_label_fs = _fs(16, scale, min_fs=8, max_fs=42)
+                        dense_labels = nb_discs >= 12
+                        label_rot = 35 if dense_labels else 0
+                        label_ha = 'right' if dense_labels else 'center'
                         for i in range(nb_discs+1):
                             top_vert = disc.split('-')[0]
                             ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
-                            ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=canal_tick_fs, color='black', alpha=0.7)
+                            ax.text(
+                                top_pos + discs_gap // 2,
+                                ax.get_ylim()[1],
+                                top_vert,
+                                verticalalignment='bottom',
+                                horizontalalignment=label_ha,
+                                rotation=label_rot,
+                                fontsize=vertebra_label_fs,
+                                color='black',
+                                alpha=0.7,
+                            )
                             top_pos += discs_gap
                             if disc != 'C1-C2':
                                 disc = previous_structure(disc)
@@ -1020,9 +1087,18 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             header_fs = _fs(45, scale, min_fs=12, max_fs=90)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
             value_fs = _fs(25, scale, min_fs=8, max_fs=60)
-            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
-            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
-            axes = axes.flatten()
+            suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
+            fig = plt.figure(figsize=page_size)
+            axes = _axes_with_big_header_row(
+                fig,
+                nrows=nrows,
+                ncols=ncols,
+                header_height=1.8,
+                header_wspace=0.04,
+                body_wspace=0.28,
+                body_hspace=0.65,
+                outer_hspace=0.04,
+            )
             idx = 0
             for i in range(ncols):
                 if i == 0:
@@ -1110,7 +1186,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     idx += 1
 
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
-            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=True)
+            _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
@@ -1127,9 +1203,18 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             header_fs = _fs(45, scale, min_fs=12, max_fs=100)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=70)
             value_fs = _fs(25, scale, min_fs=8, max_fs=70)
-            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
-            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
-            axes = axes.flatten()
+            suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
+            fig = plt.figure(figsize=page_size)
+            axes = _axes_with_big_header_row(
+                fig,
+                nrows=nrows,
+                ncols=ncols,
+                header_height=1.8,
+                header_wspace=0.04,
+                body_wspace=0.28,
+                body_hspace=0.65,
+                outer_hspace=0.04,
+            )
             idx = 0
             for i in range(ncols):
                 if i == 0:
@@ -1218,7 +1303,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     idx += 1
 
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
-            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=True)
+            _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
@@ -1234,9 +1319,18 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             header_fs = _fs(45, scale, min_fs=12, max_fs=90)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
             value_fs = _fs(25, scale, min_fs=8, max_fs=60)
-            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
-            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
-            axes = axes.flatten()
+            suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
+            fig = plt.figure(figsize=page_size)
+            axes = _axes_with_big_header_row(
+                fig,
+                nrows=nrows,
+                ncols=ncols,
+                header_height=1.8,
+                header_wspace=0.04,
+                body_wspace=0.28,
+                body_hspace=0.65,
+                outer_hspace=0.04,
+            )
             idx = 0
             for i in range(ncols):
                 if i == 0:
@@ -1320,7 +1414,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     idx += 1
 
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
-            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=True)
+            _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
             _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
