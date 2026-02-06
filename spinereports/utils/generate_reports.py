@@ -17,6 +17,101 @@ import spinereports.resources as sr_resources
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime
 
+
+def _font_scale_for_grid(page_size, nrows: int, ncols: int, base_cell_in: float = 4.5) -> float:
+    """Return a scale factor for fonts based on page size and grid density.
+
+    The intent is to keep text visually consistent across reports even when the
+    page size and the subplot grid change (e.g., many rows/cols).
+    """
+    page_w, page_h = page_size
+    nrows = max(1, int(nrows))
+    ncols = max(1, int(ncols))
+    cell_min_in = min(page_w / ncols, page_h / nrows)
+    scale = cell_min_in / float(base_cell_in)
+    # Clamp to avoid unreadably small or comically large text.
+    return float(np.clip(scale, 0.6, 2.0))
+
+
+def _fs(base_points: float, scale: float, min_fs: int = 8, max_fs: int = 120) -> int:
+    """Scaled fontsize in points (matplotlib fontsize units)."""
+    return int(np.clip(base_points * float(scale), min_fs, max_fs))
+
+
+def _compute_report_page_size(subject_data, all_values_df_group, metrics_dict, resources_path):
+    """Compute a uniform (w,h) page size for all pages in one report group."""
+    # Match the sizing heuristics used in the original plotting code.
+    size_rules = {
+        'canal': {'col_offset': 1, 'w': 6, 'h': 4},
+        'foramens': {'col_offset': 2, 'w': 6, 'h': 6},
+        'discs': {'col_offset': 4, 'w': 9, 'h': 7},
+        'vertebrae': {'col_offset': 3, 'w': 6, 'h': 4},
+    }
+
+    max_w = 11.69
+    max_h = 8.27
+    for struc, rule in size_rules.items():
+        if struc not in subject_data or struc not in all_values_df_group:
+            continue
+        struc_names = np.array(list(subject_data[struc].keys()))
+        struc_names = struc_names[np.isin(struc_names, list(all_values_df_group[struc].keys()))].tolist()
+        metrics = metrics_dict[struc]
+        nrows = len(struc_names) + 1
+        ncols = len(metrics) + rule['col_offset']
+        max_w = max(max_w, rule['w'] * ncols)
+        max_h = max(max_h, rule['h'] * nrows)
+
+    return (max_w, max_h)
+
+
+def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str, subject_img: str):
+
+    def _safe_imread(path: Path):
+        try:
+            return plt.imread(str(path))
+        except Exception:
+            return None
+
+    fig = plt.figure(figsize=page_size)
+    header_ax = fig.add_axes([0.04, 0.86, 0.92, 0.12])
+    header_ax.axis('off')
+    img_ax = fig.add_axes([0.04, 0.06, 0.92, 0.78])
+    img_ax.axis('off')
+
+    # Scale cover fonts with page size (relative to A4 landscape).
+    base_w, base_h = 11.69, 8.27
+    cover_scale = float(np.clip(min(page_size[0] / base_w, page_size[1] / base_h), 0.7, 2.2))
+    header_ax.text(0.00, 1.00, 'SpineReports', fontsize=_fs(80, cover_scale, min_fs=16, max_fs=90), fontweight='bold', ha='left', va='top')
+    header_ax.text(0.00, 0.40, f"Subject: {subject_name}", fontsize=_fs(40, cover_scale, min_fs=11, max_fs=44), ha='left', va='top')
+    header_ax.text(0.00, 0.05, f"Reference group: {group}", fontsize=_fs(35, cover_scale, min_fs=10, max_fs=40), ha='left', va='bottom', color='gray')
+    header_ax.text(1.00, 1.00, datetime.now().strftime('%Y-%m-%d %H:%M'), fontsize=_fs(50, cover_scale, min_fs=8, max_fs=60), ha='right', va='top', color='gray')
+
+    subject_img_path = Path(subject_img) if subject_img else None
+    if subject_img_path and subject_img_path.exists():
+        img = _safe_imread(subject_img_path)
+        if img is not None:
+            img_ax.imshow(img)
+    else:
+        img_ax.text(
+            0.5,
+            0.5,
+            'Subject sagittal overlay image not found.',
+            ha='center',
+            va='center',
+            fontsize=_fs(14, cover_scale, min_fs=10, max_fs=40),
+            color='gray',
+            transform=img_ax.transAxes,
+        )
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def _save_individual_figure(fig: plt.Figure, images_dir: Path, stem: str):
+    images_dir.mkdir(parents=True, exist_ok=True)
+    # Vector version (best quality for plots/text)
+    fig.savefig(str(images_dir / f"{stem}.pdf"), bbox_inches='tight')
+
 def main():
     # Description and arguments
     parser = argparse.ArgumentParser(
@@ -195,23 +290,23 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
     imgs_paths = [test_sub_folder / 'imgs' for test_sub_folder in test_sub_folders]
     ofolder_subjects = [ofolder_path / subject for subject in os.listdir(test_path)]
 
-    process_map(
-        partial(
-            create_figures,
-            all_values=all_values,
-            demographics_test=demographics_test,
-            rev_mapping=rev_mapping,
-            discs_gap=discs_gap,
-            last_disc=last_disc
-        ),
-        test_sub_folders,
-        imgs_paths,
-        ofolder_subjects,
-        max_workers=max_workers,
-        chunksize=1,
-        disable=quiet,
-    )
-    #create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
+    # process_map(
+    #     partial(
+    #         create_figures,
+    #         all_values=all_values,
+    #         demographics_test=demographics_test,
+    #         rev_mapping=rev_mapping,
+    #         discs_gap=discs_gap,
+    #         last_disc=last_disc
+    #     ),
+    #     test_sub_folders,
+    #     imgs_paths,
+    #     ofolder_subjects,
+    #     max_workers=max_workers,
+    #     chunksize=1,
+    #     disable=quiet,
+    # )
+    create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
     # Load spinereports resources path
@@ -789,32 +884,55 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
         subject_df = pd.DataFrame(struc_rows)
         subject_df.to_csv(csv_path, index=False)
 
-    # Create discs, vertebrae, foramens figures
+    structure_titles = {
+        'canal': 'Spinal canal',
+        'discs': 'Intervertebral discs',
+        'vertebrae': 'Vertebrae',
+        'foramens': 'Intervertebral foramens',
+    }
+
+    # Create a PDF report directly (avoid rasterizing figures into PNGs first)
     for group in all_values_df.keys():
-        for struc in ['canal']:
+        page_size = _compute_report_page_size(subject_data, all_values_df[group], metrics_dict, resources_path)
+        output_path = Path(ofolder_path) / f'report_{group}.pdf'
+        with PdfPages(str(output_path)) as pdf:
+            _pdf_add_cover_page(
+                pdf=pdf,
+                page_size=page_size,
+                subject_name=Path(ofolder_path).name,
+                group=group,
+                subject_img=str(imgs_path / 'raw_and_seg_overlay.png'),
+            )
+
+            struc = 'canal'
             # Create a subplot for each subject and overlay a red line corresponding to their value
             struc_names = np.array(list(subject_data[struc].keys()))
             struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 1
-            fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+            scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
+            header_fs = _fs(45, scale, min_fs=12, max_fs=90)
+            tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
+            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
+            vert_label_fs = _fs(15, scale, min_fs=6, max_fs=42)
+            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             axes = axes.flatten()
             idx = 0
             for i in range(ncols):
                 if i == 0:
-                    axes[i].text(0.5, 0.5, "Structure name", fontsize=45, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 else:
                     if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')):
                         # Load image 
                         img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')
                         axes[i].imshow(plt.imread(img_path))
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i-1], fontsize=45, ha='center', va='center', fontweight='bold')
+                        axes[i].text(0.5, 0.5, metrics[i-1], fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 axes[i].set_axis_off()
                 idx += 1
             for struc_name in struc_names:
-                axes[idx].text(0.5, 0.5, struc_name, fontsize=45, ha='center', va='center')
+                axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 idx += 1
                 for metric in metrics:
@@ -839,47 +957,55 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                         for i in range(nb_discs+1):
                             top_vert = disc.split('-')[0]
                             ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
-                            ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=12, color='black', alpha=0.7)
+                            ax.text(top_pos + discs_gap//2, ax.get_ylim()[1], top_vert, verticalalignment='bottom', horizontalalignment='center', fontsize=vert_label_fs, color='black', alpha=0.7)
                             top_pos += discs_gap
                             if disc != 'C1-C2':
                                 disc = previous_structure(disc)
 
                         ax.set_xlabel('')
-                        fig.tight_layout()
                     else:
                         ax.set_axis_off()
                     idx += 1
 
-            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
+            fig.subplots_adjust(top=0.93)
+            pdf.savefig(fig)
+            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
+            plt.close(fig)
 
-        # Create vertebrae, foramens figures
-        for struc in ['foramens']:
+            # Create vertebrae, foramens figures
+            struc = 'foramens'
             # Create a subplot for each subject and overlay a red line corresponding to their value
             struc_names = np.array(list(subject_data[struc].keys()))
             struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 2
-            fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 6 * nrows))
+            scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
+            header_fs = _fs(45, scale, min_fs=12, max_fs=90)
+            tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
+            value_fs = _fs(25, scale, min_fs=8, max_fs=60)
+            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
+            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             axes = axes.flatten()
             idx = 0
             for i in range(ncols):
                 if i == 0:
-                    axes[i].text(0.5, 0.5, "Structure name", fontsize=45, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 1:
-                    axes[i].text(0.5, 0.5, "Segmentation", fontsize=45, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Segmentation", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 else:
                     if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 2]}.jpg')):
                         # Load image 
                         img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 2]}.jpg')
                         axes[i].imshow(plt.imread(img_path))
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i - 2], fontsize=45, ha='center', va='center', fontweight='bold')
+                        axes[i].text(0.5, 0.5, metrics[i - 2], fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 
                 axes[i].set_axis_off()
                 idx += 1
             for struc_name in struc_names:
-                axes[idx].text(0.5, 0.5, struc_name, fontsize=45, ha='center', va='center')
+                axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 img_name = f'{struc_name}'
                 img_left = plt.imread(str(imgs_path / f'{img_name}_left.png'))
@@ -926,7 +1052,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                                     ha='right',
                                     va='top',
                                     color='red',
-                                    fontsize=25,
+                                    fontsize=value_fs,
                                     bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='red', alpha=0.85),
                                     zorder=25,
                                 )
@@ -939,52 +1065,59 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                             ax.set_xlim(float(subject_value) - span, float(subject_value) + span)
 
                     if add_group or add_subject:
-                        ax.tick_params(axis='x', rotation=45, labelsize=25)
+                        ax.tick_params(axis='x', rotation=45, labelsize=tick_fs)
                         ax.set_xlabel('')
-                        fig.tight_layout()
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
-            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
+            fig.subplots_adjust(top=0.93)
+            pdf.savefig(fig)
+            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
 
-        # Create discs figures
-        for struc in ['discs']:
+            # Create discs figures
+            struc = 'discs'
             # Create a subplot for each subject and overlay a red line corresponding to their value
             struc_names = np.array(list(subject_data[struc].keys()))
             struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 4
-            fig, axes = plt.subplots(nrows, ncols, figsize=(9 * ncols, 7 * nrows))
+            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             fig.subplots_adjust(bottom=0)
+            scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
+            header_fs = _fs(45, scale, min_fs=12, max_fs=100)
+            tick_fs = _fs(25, scale, min_fs=8, max_fs=70)
+            value_fs = _fs(25, scale, min_fs=8, max_fs=70)
+            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
             axes = axes.flatten()
             idx = 0
             for i in range(ncols):
                 if i == 0:
-                    axes[i].text(0.5, 0.5, "Structure name", fontsize=70, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 1:
-                    axes[i].text(0.5, 0.5, "Disc grading", fontsize=70, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Disc grading", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 2:
-                    axes[i].text(0.5, 0.5, "Image", fontsize=70, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Image", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 3:
-                    axes[i].text(0.5, 0.5, "Segmentation", fontsize=70, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Segmentation", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 else:
                     if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 4]}.jpg')):
                         # Load image 
                         img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 4]}.jpg')
                         axes[i].imshow(plt.imread(img_path))
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i - 4], fontsize=70, ha='center', va='center', fontweight='bold')
+                        axes[i].text(0.5, 0.5, metrics[i - 4], fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 axes[i].set_axis_off()
                 idx += 1
             for struc_name in struc_names:
-                axes[idx].text(0.5, 0.5, struc_name, fontsize=70, ha='center', va='center')
+                axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 grading = subject_data[struc][struc_name]['grading'][group]
-                axes[idx+1].text(0.5, 0.5, f'Grading {grading}', fontsize=70, ha='center', va='center')
+                axes[idx+1].text(0.5, 0.5, f'Grading {grading}', fontsize=header_fs, ha='center', va='center')
                 axes[idx+1].set_axis_off()
                 # Load images
                 img_name = f'{struc}_{struc_name}'
@@ -1026,7 +1159,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                                     ha='right',
                                     va='top',
                                     color='red',
-                                    fontsize=35,
+                                    fontsize=value_fs,
                                     bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='red', alpha=0.85),
                                     zorder=35,
                                 )
@@ -1039,45 +1172,52 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                             ax.set_xlim(float(subject_value) - span, float(subject_value) + span)
 
                     if add_group or add_subject:
-                        ax.tick_params(axis='x', rotation=45, labelsize=35)
+                        ax.tick_params(axis='x', rotation=45, labelsize=tick_fs)
                         ax.set_xlabel('')
-                        fig.tight_layout()
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
-            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
+            fig.subplots_adjust(top=0.93)
+            pdf.savefig(fig)
+            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
         
-        for struc in ['vertebrae']:
+            struc = 'vertebrae'
             # Create a subplot for each subject and overlay a red line corresponding to their value
             struc_names = np.array(list(subject_data[struc].keys()))
             struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 3
-            fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
+            scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
+            header_fs = _fs(45, scale, min_fs=12, max_fs=90)
+            tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
+            value_fs = _fs(25, scale, min_fs=8, max_fs=60)
+            suptitle_fs = _fs(80, scale, min_fs=14, max_fs=90)
+            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
             axes = axes.flatten()
             idx = 0
             for i in range(ncols):
                 if i == 0:
-                    axes[i].text(0.5, 0.5, "Structure name", fontsize=45, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 1:
-                    axes[i].text(0.5, 0.5, "Image", fontsize=45, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Image", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 2:
-                    axes[i].text(0.5, 0.5, "Segmentation", fontsize=45, ha='center', va='center', fontweight='bold')
+                    axes[i].text(0.5, 0.5, "Segmentation", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 else:
                     if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 3]}.jpg')):
                         # Load image 
                         img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 3]}.jpg')
                         axes[i].imshow(plt.imread(img_path))
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i - 3], fontsize=45, ha='center', va='center', fontweight='bold')
+                        axes[i].text(0.5, 0.5, metrics[i - 3], fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 axes[i].set_axis_off()
                 idx += 1
             for struc_name in struc_names:
-                axes[idx].text(0.5, 0.5, struc_name, fontsize=45, ha='center', va='center')
+                axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 # Load images
                 img_name = f'{struc}_{struc_name}'
@@ -1119,7 +1259,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                                     ha='right',
                                     va='top',
                                     color='red',
-                                    fontsize=25,
+                                    fontsize=value_fs,
                                     bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='red', alpha=0.85),
                                     zorder=25,
                                 )
@@ -1132,116 +1272,23 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                             ax.set_xlim(float(subject_value) - span, float(subject_value) + span)
 
                     if add_group or add_subject:
-                        ax.tick_params(axis='x', rotation=45, labelsize=25)
+                        ax.tick_params(axis='x', rotation=45, labelsize=tick_fs)
                         ax.set_xlabel('')
-                        fig.tight_layout()
                     if not add_group and not add_subject:
                         ax.set_axis_off()
                     
                     idx += 1
 
-            plt.savefig(str(images_dir / f"compared_{group}_{struc}.png"))
+            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.995)
+            fig.subplots_adjust(top=0.93)
+            pdf.savefig(fig)
+            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
-        
-        # Generate PDF report
-        output_path = Path(ofolder_path) / f'report_{group}.pdf'
-        generate_pdf(subject_name=Path(ofolder_path).name, group=group, subject_img=str(imgs_path / f'raw_and_seg_overlay.png'), figures_path=images_dir, out_path=output_path)
 
 def generate_pdf(subject_name, group, subject_img, figures_path, out_path):
-    figures_path = Path(figures_path)
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _safe_imread(path: Path):
-        try:
-            return plt.imread(str(path))
-        except Exception:
-            return None
-
-    # Prefer a deterministic order for the main summary pages.
-    preferred_structures = ['canal', 'discs', 'vertebrae', 'foramens']
-    structures_names = ['Spinal canal', 'Intervertebral discs', 'Vertebrae', 'Intervertebral foramens']
-    preferred_files = []
-    for struc in preferred_structures:
-        candidate = figures_path / f"compared_{group}_{struc}.png"
-        if candidate.exists():
-            preferred_files.append(candidate)
-
-    # Fallback: include any compared_*.png found in the folder.
-    if not preferred_files:
-        preferred_files = sorted(figures_path.glob('compared_*.png'))
-
-    # PDF page size: A4 landscape
-    page_size = (11.69, 8.27)
-
-    with PdfPages(str(out_path)) as pdf:
-        # Cover page
-        fig = plt.figure(figsize=page_size)
-        ax = fig.add_axes([0.06, 0.12, 0.88, 0.78])
-        ax.axis('off')
-
-        fig.text(
-            0.06,
-            0.94,
-            'SpineReports',
-            fontsize=26,
-            fontweight='bold',
-            ha='left',
-            va='top',
-        )
-        fig.text(
-            0.06,
-            0.85,
-            f"Subject: {subject_name}",
-            fontsize=16,
-            ha='left',
-            va='top',
-        )
-        fig.text(
-            0.94,
-            0.94,
-            datetime.now().strftime('%Y-%m-%d %H:%M'),
-            fontsize=10,
-            ha='right',
-            va='top',
-            color='gray',
-        )
-
-        subject_img_path = Path(subject_img) if subject_img else None
-        if subject_img_path and subject_img_path.exists():
-            img = _safe_imread(subject_img_path)
-            if img is not None:
-                ax.imshow(img)
-        else:
-            ax.text(
-                0.5,
-                0.5,
-                'Subject sagittal overlay image not found.',
-                ha='center',
-                va='center',
-                fontsize=14,
-                color='gray',
-                transform=ax.transAxes,
-            )
-
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-        # Summary pages
-        for page_idx, png_path in enumerate(preferred_files, start=1):
-            fig = plt.figure(figsize=page_size)
-            ax = fig.add_axes([0.03, 0.06, 0.94, 0.88])
-            ax.axis('off')
-            img = _safe_imread(png_path)
-            if img is not None:
-                ax.imshow(img)
-
-            title = structures_names[page_idx - 1]
-            fig.text(0.03, 0.97, title, fontsize=20, fontweight='bold', ha='left', va='top')
-            fig.text(0.97, 0.02, f"Page {page_idx}", fontsize=9, ha='right', va='bottom', color='gray')
-
-            pdf.savefig(fig, bbox_inches='tight')
-            plt.close(fig)
+    raise NotImplementedError(
+        'PDF generation is now handled directly inside create_global_figures() to avoid rasterizing figures to PNG first.'
+    )
 
 
 def convert_str_to_list(string):
