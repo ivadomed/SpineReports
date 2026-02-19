@@ -747,7 +747,7 @@ def measure_csf(img_data, seg_csf_data):
         slice_csf = seg_csf_data[:, :, iz].astype(bool)
 
         # Extract images values using segmentation
-        slice_values = img_data[slice_csf]
+        slice_values = img_data[:, :, iz][slice_csf]
 
         # Extract most represented value
         if slice_values.size == 0:
