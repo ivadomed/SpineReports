@@ -756,7 +756,7 @@ def measure_csf(img_data, seg_csf_data):
             signal = np.percentile(slice_values, 90)
 
         # Save values
-        properties['slice_signal'][iz] = signal
+        properties['slice_signal'][iz] = signal/properties['csf_signal']
     return properties
 
 def measure_canal(seg_canal, centerline, spine_centerline):
