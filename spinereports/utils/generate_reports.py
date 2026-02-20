@@ -898,6 +898,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             'vertebrae': ['median_thickness', 'AP_thickness', 'volume'],
             'foramens': ['right_surface', 'left_surface', 'asymmetry_R-L'],
             'canal': ['area', 'diameter_AP', 'diameter_RL', 'eccentricity', 'solidity'],
+            'csf': ['slice_signal']
         }
 
     # Prepare output subfolders
@@ -956,6 +957,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
         'discs': 'Intervertebral discs',
         'vertebrae': 'Vertebrae',
         'foramens': 'Intervertebral foramens',
+        'csf': 'Cerebrospinal fluid'
     }
 
     # Create a PDF report directly (avoid rasterizing figures into PNGs first)
@@ -971,97 +973,97 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 subject_img=str(imgs_path / 'raw_and_seg_overlay.png'),
             )
 
-            struc = 'canal'
-            # Create a subplot for each subject and overlay a red line corresponding to their value
-            struc_names = np.array(list(subject_data[struc].keys()))
-            struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
-            metrics = metrics_dict[struc]
-            nrows = len(struc_names) + 1
-            ncols = len(metrics) + 1
-            scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
-            header_fs = _fs(45, scale, min_fs=12, max_fs=90)
-            tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
-            suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
-            canal_tick_fs = _fs(18, scale, min_fs=10, max_fs=80)
-            fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
-            axes = axes.flatten()
-            idx = 0
-            for i in range(ncols):
-                if i == 0:
-                    axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
-                else:
-                    if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')):
-                        # Load image 
-                        img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')
-                        axes[i].imshow(plt.imread(img_path))
+            for struc in ['canal', 'csf']:
+                # Create a subplot for each subject and overlay a red line corresponding to their value
+                struc_names = np.array(list(subject_data[struc].keys()))
+                struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
+                metrics = metrics_dict[struc]
+                nrows = len(struc_names) + 1
+                ncols = len(metrics) + 1
+                scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
+                header_fs = _fs(45, scale, min_fs=12, max_fs=90)
+                tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
+                suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
+                canal_tick_fs = _fs(18, scale, min_fs=10, max_fs=80)
+                fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
+                axes = axes.flatten()
+                idx = 0
+                for i in range(ncols):
+                    if i == 0:
+                        axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i-1], fontsize=header_fs, ha='center', va='center', fontweight='bold')
-                axes[i].set_axis_off()
-                idx += 1
-            for struc_name in struc_names:
-                axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
-                axes[idx].set_axis_off()
-                idx += 1
-                for metric in metrics:
-                    ax = axes[idx]
-                    if metric in subject_data[struc][struc_name]:
-                        y_subject = subject_data[struc][struc_name][metric]
-                        x_subject = subject_data[struc][struc_name]['slice_interp']
-
-                        # Keep lines with metrics line equal to metric
-                        all_values_data = all_values_df[group][struc][struc_name][metric]
-                        
-                        # Use seaborn line plot
-                        sns.lineplot(x='slice_interp', y='values', data=all_values_data, ax=ax, errorbar='sd', color='gray')
-
-                        # Plot subject
-                        ax.plot(x_subject, y_subject, color='red', linewidth=2)
-
-                        # Larger/more readable ticks for canal
-                        tick_len = float(np.clip(6.0 * scale, 3.0, 12.0))
-                        tick_w = float(np.clip(1.2 * scale, 0.8, 2.5))
-                        ax.tick_params(axis='both', labelsize=canal_tick_fs, length=tick_len, width=tick_w, pad=2)
-                        ax.xaxis.set_major_locator(MaxNLocator(nbins=7))
-                        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                        
-                        # Add vertebrae labels
-                        disc = last_disc
-                        top_pos = 0
-                        nb_discs = all_values_data['slice_interp'].max()//discs_gap
-                        # Leave some headroom for vertebra labels
-                        ax.margins(y=0.18)
-                        vertebra_label_fs = _fs(16, scale, min_fs=8, max_fs=42)
-                        dense_labels = nb_discs >= 12
-                        label_rot = 35 if dense_labels else 0
-                        label_ha = 'right' if dense_labels else 'center'
-                        for i in range(nb_discs+1):
-                            top_vert = disc.split('-')[0]
-                            ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
-                            ax.text(
-                                top_pos + discs_gap // 2,
-                                ax.get_ylim()[1],
-                                top_vert,
-                                verticalalignment='bottom',
-                                horizontalalignment=label_ha,
-                                rotation=label_rot,
-                                fontsize=vertebra_label_fs,
-                                color='black',
-                                alpha=0.7,
-                            )
-                            top_pos += discs_gap
-                            if disc != 'C1-C2':
-                                disc = previous_structure(disc)
-
-                        ax.set_xlabel('')
-                    else:
-                        ax.set_axis_off()
+                        if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')):
+                            # Load image 
+                            img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')
+                            axes[i].imshow(plt.imread(img_path))
+                        else:
+                            axes[i].text(0.5, 0.5, metrics[i-1], fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                    axes[i].set_axis_off()
                     idx += 1
+                for struc_name in struc_names:
+                    axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
+                    axes[idx].set_axis_off()
+                    idx += 1
+                    for metric in metrics:
+                        ax = axes[idx]
+                        if metric in subject_data[struc][struc_name]:
+                            y_subject = subject_data[struc][struc_name][metric]
+                            x_subject = subject_data[struc][struc_name]['slice_interp']
 
-            fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
-            _apply_report_grid_layout(fig, scale=scale, rotated_xticks=False)
-            pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
-            plt.close(fig)
+                            # Keep lines with metrics line equal to metric
+                            all_values_data = all_values_df[group][struc][struc_name][metric]
+                            
+                            # Use seaborn line plot
+                            sns.lineplot(x='slice_interp', y='values', data=all_values_data, ax=ax, errorbar='sd', color='gray')
+
+                            # Plot subject
+                            ax.plot(x_subject, y_subject, color='red', linewidth=2)
+
+                            # Larger/more readable ticks for canal
+                            tick_len = float(np.clip(6.0 * scale, 3.0, 12.0))
+                            tick_w = float(np.clip(1.2 * scale, 0.8, 2.5))
+                            ax.tick_params(axis='both', labelsize=canal_tick_fs, length=tick_len, width=tick_w, pad=2)
+                            ax.xaxis.set_major_locator(MaxNLocator(nbins=7))
+                            ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+                            
+                            # Add vertebrae labels
+                            disc = last_disc
+                            top_pos = 0
+                            nb_discs = all_values_data['slice_interp'].max()//discs_gap
+                            # Leave some headroom for vertebra labels
+                            ax.margins(y=0.18)
+                            vertebra_label_fs = _fs(16, scale, min_fs=8, max_fs=42)
+                            dense_labels = nb_discs >= 12
+                            label_rot = 35 if dense_labels else 0
+                            label_ha = 'right' if dense_labels else 'center'
+                            for i in range(nb_discs+1):
+                                top_vert = disc.split('-')[0]
+                                ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
+                                ax.text(
+                                    top_pos + discs_gap // 2,
+                                    ax.get_ylim()[1],
+                                    top_vert,
+                                    verticalalignment='bottom',
+                                    horizontalalignment=label_ha,
+                                    rotation=label_rot,
+                                    fontsize=vertebra_label_fs,
+                                    color='black',
+                                    alpha=0.7,
+                                )
+                                top_pos += discs_gap
+                                if disc != 'C1-C2':
+                                    disc = previous_structure(disc)
+
+                            ax.set_xlabel('')
+                        else:
+                            ax.set_axis_off()
+                        idx += 1
+
+                fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
+                _apply_report_grid_layout(fig, scale=scale, rotated_xticks=False)
+                pdf.savefig(fig)
+                _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
+                plt.close(fig)
 
             # Create vertebrae, foramens figures
             struc = 'foramens'
