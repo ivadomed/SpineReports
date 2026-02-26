@@ -1132,7 +1132,7 @@ def measure_foramens(seg_foramen_data, canal_centerline, is_sacrum, pr):
             seg[x-1, y-1]=1
 
         # Inverse image
-        labeled_bg = morphology.remove_small_objects(~seg.astype(bool), min_size=64)
+        labeled_bg = morphology.remove_small_objects(~seg.astype(bool), min_size=2)
 
         # Padd image to connect exterior components
         labeled_bg = np.pad(labeled_bg, pad_width=(5,5), mode='constant', constant_values=1)
