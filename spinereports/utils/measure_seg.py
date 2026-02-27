@@ -877,6 +877,28 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     u2 = np.cross(v, u1)
     u2 /= np.linalg.norm(u2)
 
+    # Project coords in u1u2 plane
+    x_coords = np.dot(coords, u1)
+    y_coords = np.dot(coords, u2)
+    x_canal = np.dot(canal_pos, u1)
+    y_canal = np.dot(canal_pos, u2)
+    min_x, min_y = np.min(x_coords), np.min(y_coords)
+    # Center the image onto the segmentation
+    x_coords = x_coords - min_x
+    y_coords = y_coords - min_y
+    x_canal = x_canal - min_x
+    y_canal = y_canal - min_y
+    
+    # Round coordinates
+    x_coords = np.round(x_coords).astype(int)
+    y_coords = np.round(y_coords).astype(int)
+    x_canal = np.round(x_canal).astype(int)
+    y_canal = np.round(y_canal).astype(int)
+
+    # Create image
+    seg = np.zeros((np.max(x_coords), np.max(y_coords)))
+    for x, y in zip(x_coords, y_coords):
+        seg[x-1, y-1]=1
     # Define vector w with angle theta in u1u2 plane
     def w(u1, u2, theta): 
         return np.cos(theta) * u1 + np.sin(theta) * u2
