@@ -485,6 +485,12 @@ def measure_seg(img, seg, label, mapping):
     vert_signal = [vert_dict['median_signal'] for vert_dict in vertebrae_rows]
     vert_signal_dict = {vert_dict["name"]: (vert_dict['median_signal']*vert_dict['ap_attenuation'])/np.max(vert_signal) for vert_dict in vertebrae_rows}
     
+    # Add intervertebral discs to seg_bin
+    for struc in mapping.keys():
+        if mapping[struc] in unique_seg and '-' in struc: # Intervertbral disc in segmentation
+            seg_disc_data = (seg.data == mapping[struc]).astype(int)
+            seg_bin.data[seg_disc_data.astype(bool)] = 1
+
     # Create spine centerline using vertebral bodies and discs
     if 50 in unique_seg: # Add sacrum
         seg_bin.data[seg.data == 50] = 1
