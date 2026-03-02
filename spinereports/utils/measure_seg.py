@@ -18,12 +18,12 @@ from sklearn.mixture import GaussianMixture
 import colorsys
 
 from spinereports.utils.image import Image, resample_nib, zeros_like
+from spinereports.utils.utils import find_symmetry_vector_binary
 from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
 import SimpleITK as sitk
 from scipy.spatial import ConvexHull
-
 
 warnings.filterwarnings("ignore")
 
@@ -864,13 +864,26 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     vert_pos = np.mean(coords,axis=0)
     z_mean = vert_pos[-1]
 
+    # # Show canal
+    # for i in range(3):
+    #     canal_slice = np.argmax(seg_canal_data, axis=i)
+    #     canal_slice_rgb = cv2.cvtColor(
+    #         canal_slice.astype(np.uint8),
+    #         cv2.COLOR_GRAY2RGB
+    #     )
+    #     idx = [j for j in range(3) if j != i]
+    #     for coords in np.round(canal_centerline['position']).astype(int).T:
+    #         canal_slice_rgb[coords[idx[0]], coords[idx[1]]] = [0, 0, 1] # Red overlay
+    #     os.makedirs(f'test/canal/', exist_ok=True)
+    #     cv2.imwrite(f'test/canal/projection_{i}.png', canal_slice_rgb*255)
+
     # Find closest point and derivative onto the canal centerline
     closest_canal_idx = np.argmin(abs(canal_centerline['position'][2]-z_mean))
     canal_pos = canal_centerline['position'][:,closest_canal_idx]
     canal_deriv = canal_centerline['derivative'][:,closest_canal_idx]
 
     # Create two perpendicular vectors u1 and u2
-    v = canal_deriv
+    v = canal_deriv/(np.linalg.norm(canal_deriv) + 1e-8)
     tmp = np.array([1, 0, 0]) # Init temporary non colinear vector
     u1 = np.cross(v, tmp)
     u1 /= np.linalg.norm(u1)
@@ -895,47 +908,54 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     x_canal = np.round(x_canal).astype(int)
     y_canal = np.round(y_canal).astype(int)
 
-    # Create image
-    seg = np.zeros((np.max(x_coords), np.max(y_coords)))
-    for x, y in zip(x_coords, y_coords):
-        seg[x-1, y-1]=1
-    # Define vector w with angle theta in u1u2 plane
-    def w(u1, u2, theta): 
-        return np.cos(theta) * u1 + np.sin(theta) * u2
-    
-    def cutting_plane(theta):
-        # Init normal vector of the plane
-        n = np.cross(v, w(u1, u2, theta))
-        n_norm = np.linalg.norm(n)
-        if n_norm == 0:
-            raise ValueError("Normal vector has zero norm.")
-        n = n/n_norm
+    # Create image (avoid off-by-one / negative indexing wrap)
+    max_x = int(np.max(x_coords))
+    max_y = int(np.max(y_coords))
+    seg = np.zeros((max_x + 1, max_y + 1), dtype=np.float32)
+    x_coords = np.clip(x_coords, 0, max_x)
+    y_coords = np.clip(y_coords, 0, max_y)
+    seg[x_coords, y_coords] = 1.0
 
-        dot_product = np.dot(coords-canal_pos, n)
-        pos = np.sum(dot_product > 0)
-        neg = len(coords) - pos
-        proportion = pos/(pos+neg)
-        return proportion - 0.5
+    # Pad seg by 5 pixels
+    seg = np.pad(seg, pad_width=5, mode='constant', constant_values=0)
+    x_canal += 5
+    y_canal += 5
+
+    #seg[x_canal, y_canal] = 2.0 # Ensure canal point is included in the segmentation
+
+    # Symmetry vector in projected (u1, u2) plane constrained through canal point
+    _, sym_vec_2d, _ = find_symmetry_vector_binary(seg.copy(), center=(x_canal, y_canal), angle_step_deg=0.2)
+    w = sym_vec_2d[0] * u1 + sym_vec_2d[1] * u2
+    w /= (np.linalg.norm(w) + 1e-8)
+
+    # # Visualize symmetry axis on projected segmentation
+    # seg_u8 = (seg > 0).astype(np.uint8) * 255
+    # hog_overlay = cv2.cvtColor(seg_u8, cv2.COLOR_GRAY2BGR)
+    # center_row = x_canal
+    # center_col = y_canal
+    # line_len = 10
+    # drow = np.round(sym_vec_2d[0]).astype(int) * line_len
+    # dcol = np.round(sym_vec_2d[1]).astype(int) * line_len
+    # #cv2.line(hog_overlay, p1, p2, color=(0, 255, 0), thickness=1)
+    # cv2.circle(hog_overlay, (center_col, center_row), radius=2, color=(0, 0, 255), thickness=-1)
+    # cv2.circle(hog_overlay, (center_col+dcol, center_row+drow), radius=2, color=(0, 0, 255), thickness=-1)
+    # hog_overlay = hog_overlay.astype(np.float32)
 
     # Find function zero between 0 and pi
-    res = scipy.optimize.root_scalar(cutting_plane, bracket=[0, np.pi], method='brentq')
-    if not res.converged:
-        raise ValueError('Did not find a cutting plane for vertebra')
-    best_theta = res.root
-    if (vert_pos[1]-canal_pos[1])*w(u1, u2, best_theta)[1] < 0:
+    if (vert_pos[1]-canal_pos[1])*w[1] < 0:
         # Orient vector from canal to body
-        best_theta += np.pi
-    u = np.cross(v, w(u1, u2, best_theta)) # create last vector
+        w = -w
+    u = np.cross(v, w) # create last vector
 
     # Find canal distance to vertebral body
     canal_slice_coords = np.argwhere(seg_canal_data[:,:,int(np.round(z_mean))]>0)
-    projections = np.dot(canal_slice_coords-canal_pos[:2], w(u1, u2, best_theta)[:2])
+    projections = np.dot(canal_slice_coords-canal_pos[:2], w[:2])
     anterior_radius = projections.max()
     posterior_radius = projections.min()
 
     # Isolate vertebral body
     anterior_pos = np.array([canal_pos[0], canal_pos[1]+anterior_radius, canal_pos[2]])
-    ant_projections = np.dot(coords-anterior_pos, w(u1, u2, best_theta))
+    ant_projections = np.dot(coords-anterior_pos, w)
     body_coords = coords[ant_projections>0]
     body_pos = np.mean(body_coords,axis=0)
 
@@ -953,7 +973,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
     # Isolate processes
     posterior_pos = np.array([canal_pos[0], canal_pos[1]+posterior_radius, canal_pos[2]])
-    projections = np.dot(coords-posterior_pos, w(u1, u2, best_theta))
+    projections = np.dot(coords-posterior_pos, w)
     process_coords = coords[projections<0]
     process_pos = np.mean(process_coords,axis=0)
 
@@ -961,7 +981,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     AP_thickness = np.max(ant_projections)
 
     # Compute thickness profile vertebral body
-    coordinate_system = np.stack((u, w(u1, u2, best_theta), v), axis=0)
+    coordinate_system = np.stack((u, w, v), axis=0)
     bin_size = max(2//pr, 1) # Put 1 bin per 2 mm
     
     median_thickness = compute_thickness_profile(body_coords, coordinate_system, bin_size=bin_size)
