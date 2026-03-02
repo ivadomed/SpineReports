@@ -496,7 +496,24 @@ def measure_seg(img, seg, label, mapping):
         seg_bin.data[seg.data == 50] = 1
     dilation_radius = 1.5//pr  # 1.5 mm
     seg_bin.data = binary_dilation(seg_bin.data, ball(dilation_radius)) # Dilate seg_bin to remove gap between discs and vertebrae
-    spine_centerline = get_centerline(seg_bin)
+    spine_centerline = get_centerline(seg_bin, smooth=500) # Smooth more than canal centerline to get a smoother spine centerline
+
+    # # Show spine centerline and canal centerline
+    # for i in range(3):
+    #     canal_slice = np.argmax(seg_canal.data, axis=i)
+    #     spine_slice = np.argmax(seg_bin.data, axis=i)*2
+    #     img_slice = canal_slice + spine_slice
+    #     img_slice_rgb = cv2.cvtColor(
+    #         img_slice.astype(np.uint8),
+    #         cv2.COLOR_GRAY2RGB
+    #     )
+    #     idx = [j for j in range(3) if j != i]
+    #     for coords in np.round(centerline['position']).astype(int).T:
+    #         img_slice_rgb[coords[idx[0]], coords[idx[1]]] = [0, 0, 1] # Red overlay
+    #     for coords in np.round(spine_centerline['position']).astype(int).T:
+    #         img_slice_rgb[coords[idx[0]], coords[idx[1]]] = [0, 1, 0] # Green overlay
+    #     os.makedirs(f'test/canal/', exist_ok=True)
+    #     cv2.imwrite(f'test/canal/projection_{i}.png', img_slice_rgb*125)
 
     # Compute metrics onto canal segmentation
     properties = measure_canal(seg_canal, centerline, spine_centerline)
@@ -1372,7 +1389,7 @@ def compute_thickness_profile(coords, rotation_matrix, bin_size=1.0):
                 thicknesses.append(max_SI-min_SI)
     return np.median(np.array(thicknesses))
 
-def get_centerline(seg):
+def get_centerline(seg, smooth=50):
     '''
     Based on https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/core.py
 
@@ -1389,8 +1406,8 @@ def get_centerline(seg):
 
     # Interpolate centerline
     px, py, pz = seg.dim[4:7]
-    x_centerline_fit, x_centerline_deriv = bspline(z_mean, x_mean, z_ref, smooth=50, pz=pz)
-    y_centerline_fit, y_centerline_deriv = bspline(z_mean, y_mean, z_ref, smooth=50, pz=pz)
+    x_centerline_fit, x_centerline_deriv = bspline(z_mean, x_mean, z_ref, smooth=smooth, pz=pz)
+    y_centerline_fit, y_centerline_deriv = bspline(z_mean, y_mean, z_ref, smooth=smooth, pz=pz)
 
     # Construct output
     arr_ctl = np.array([x_centerline_fit, y_centerline_fit, z_ref])
