@@ -887,6 +887,10 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     vert_pos = np.mean(coords,axis=0)
     z_mean = vert_pos[-1]
 
+    # Exclude vertebrae touching image boundary
+    if coords[:,2].max() == seg_vert_data.shape[2]-1 or coords[:,2].min() == 0:
+        return None, None, None, False
+
     # # Show canal
     # for i in range(3):
     #     canal_slice = np.argmax(seg_canal_data, axis=i)
@@ -973,6 +977,10 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     # Find canal distance to vertebral body
     canal_slice_coords = np.argwhere(seg_canal_data[:,:,int(np.round(z_mean))]>0)
     projections = np.dot(canal_slice_coords-canal_pos[:2], w[:2])
+
+    if len(projections) == 0:
+        return None, None, None, False
+
     anterior_radius = projections.max()
     posterior_radius = projections.min()
 
