@@ -48,6 +48,9 @@ def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_
         pos_coords_x = np.round(np.dot(pos_coords, normal)).astype(int)
         pos_coords_y = np.round(np.dot(pos_coords, sym)).astype(int)
 
+        if pos_coords_x.size == 0 or neg_coords_x.size == 0:
+            return np.inf
+
         # Substract min along x
         min_x = np.min(pos_coords_x)
         pos_coords_x -= min_x
