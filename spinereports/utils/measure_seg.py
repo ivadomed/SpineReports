@@ -998,10 +998,6 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     for coord in body_coords:
         body_array[coord[0], coord[1], coord[2]]=1
 
-    # Exclude vertebrae touching image boundary
-    if coords[:,2].max() == seg_vert_data.shape[2]-1 or coords[:,2].min() == 0:
-        return None, None, None, False
-
     # Isolate processes
     posterior_pos = np.array([canal_pos[0], canal_pos[1]+posterior_radius, canal_pos[2]])
     projections = np.dot(coords-posterior_pos, w)
@@ -1240,6 +1236,8 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_areas[side] = -1
                 foramens_imgs[side] = np.flipud(foramen_bin)
         else:
+            if foramens_name == "foramens_L5-S" and side == "right":
+                print()
             closest_foramen_mask_list = []
             for i in range(4):
                 # Dilate foramen mask and find largest connected component to extract foramen area
@@ -1253,8 +1251,10 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                     dilated_mask = morphology.binary_erosion(~eroded_mask, morphology.disk(i)) # Dilate to the original shape
                     closest_foramen_mask_list.append(~dilated_mask)
             if len(closest_foramen_mask_list) != 0:
-                areas = [np.sum(mask) for mask in closest_foramen_mask_list]
-                foramen_mask = closest_foramen_mask_list[np.argmax(areas)]
+                list_confidence_vector = [foramen_confidence_score(mask, closest_foramen_mask_list) for mask in closest_foramen_mask_list]
+                closest_foramen_short_list = [mask for mask in closest_foramen_mask_list if foramen_confidence_score(mask, closest_foramen_mask_list) == np.max(list_confidence_vector)]
+                areas = [np.sum(mask) for mask in closest_foramen_short_list]
+                foramen_mask = closest_foramen_short_list[np.argmax(areas)]
                 # Calculate foramen area
                 pixel_surface = pr**2
                 foramen_area = np.argwhere(foramen_mask > 0).shape[0]*pixel_surface #mm2
@@ -1267,6 +1267,9 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_imgs[side] = np.flipud(foramen_bin)
 
     return foramens_areas, foramens_imgs
+
+def foramen_confidence_score(mask, mask_list):
+    return np.sum([2*np.sum((mask * mask_i))/(np.sum(mask_i)+np.sum(mask)) > 0.5 for mask_i in mask_list])
 
 def find_intensity_peaks(values):
     '''
@@ -1747,13 +1750,17 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
     
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-035_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-035_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-035_acq-sag_T2w.nii.gz'
+    
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
 
     ofolder_path = 'test'
 
