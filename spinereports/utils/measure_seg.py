@@ -1241,7 +1241,9 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 if len(foramen_regions) > 1:
                     foramen_areas = [region.area for region in foramen_regions]
                     closest_foramen_region = foramen_regions[np.argsort(foramen_areas)[-2]] # Take second largest region
-                    closest_foramen_mask_list.append(labeled_foramen == closest_foramen_region.label)
+                    eroded_mask = labeled_foramen == closest_foramen_region.label
+                    dilated_mask = morphology.binary_erosion(~eroded_mask, morphology.disk(i)) # Dilate to the original shape
+                    closest_foramen_mask_list.append(~dilated_mask)
             areas = [np.sum(mask) for mask in closest_foramen_mask_list]
             foramen_mask = closest_foramen_mask_list[np.argmax(areas)]
             # Calculate foramen area
