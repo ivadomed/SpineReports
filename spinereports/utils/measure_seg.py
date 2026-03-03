@@ -1169,7 +1169,8 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
         foramen_bin = np.pad(foramen_bg, pad_width=(5,5), mode='constant', constant_values=1)
         canal_bin = np.pad(canal_bg, pad_width=(5,5), mode='constant', constant_values=0)
 
-        if foramens_name != "foramens_L5-S":
+        if "C" in foramens_name:
+            # Use spinal canal for cervical foramens (seems more robust)
             # Label all component and extract regions
             labeled_foramen, _ = ndi.label(foramen_bin)
             foramen_regions = measure.regionprops(labeled_foramen)
@@ -1231,7 +1232,6 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_areas[side] = -1
                 foramens_imgs[side] = np.flipud(foramen_bin)
         else:
-            # Special extraction for L5-S1 where the canal position is less reliable
             closest_foramen_mask_list = []
             for i in range(4):
                 # Dilate foramen mask and find largest connected component to extract foramen area
@@ -1244,15 +1244,19 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                     eroded_mask = labeled_foramen == closest_foramen_region.label
                     dilated_mask = morphology.binary_erosion(~eroded_mask, morphology.disk(i)) # Dilate to the original shape
                     closest_foramen_mask_list.append(~dilated_mask)
-            areas = [np.sum(mask) for mask in closest_foramen_mask_list]
-            foramen_mask = closest_foramen_mask_list[np.argmax(areas)]
-            # Calculate foramen area
-            pixel_surface = pr**2
-            foramen_area = np.argwhere(foramen_mask > 0).shape[0]*pixel_surface #mm2
-            foramens_areas[side] = foramen_area
-            
-            # Flip the foraminal image upside-down for better visual
-            foramens_imgs[side] = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
+            if len(closest_foramen_mask_list) != 0:
+                areas = [np.sum(mask) for mask in closest_foramen_mask_list]
+                foramen_mask = closest_foramen_mask_list[np.argmax(areas)]
+                # Calculate foramen area
+                pixel_surface = pr**2
+                foramen_area = np.argwhere(foramen_mask > 0).shape[0]*pixel_surface #mm2
+                foramens_areas[side] = foramen_area
+                
+                # Flip the foraminal image upside-down for better visual
+                foramens_imgs[side] = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
+            else:
+                foramens_areas[side] = -1
+                foramens_imgs[side] = np.flipud(foramen_bin)
 
     return foramens_areas, foramens_imgs
 
@@ -1731,17 +1735,17 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-029_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-029_acq-sag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
 
     ofolder_path = 'test'
 
