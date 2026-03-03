@@ -293,25 +293,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    # try:
-    metrics, imgs = measure_seg(
-        img=img,
-        seg=seg,
-        label=label,
-        mapping=mapping,
-    )
-    # except ValueError as e:
-    #     print(f'ValueError: {seg_path}, {e}')
-    #     return
-    # except KeyError as e:
-    #     print(f'KeyError: {seg_path}, {e}')
-    #     return
-    # except IndexError as e:
-    #     print(f'IndexError: {seg_path}, {e}')
-    #     return
-    # except Exception as e:
-    #     print(f'Error: {seg_path}, {e}')
-    #     return
+    try:
+        metrics, imgs = measure_seg(
+            img=img,
+            seg=seg,
+            label=label,
+            mapping=mapping,
+        )
+    except ValueError as e:
+        print(f'ValueError: {seg_path}, {e}')
+        return
+    except KeyError as e:
+        print(f'KeyError: {seg_path}, {e}')
+        return
+    except IndexError as e:
+        print(f'IndexError: {seg_path}, {e}')
+        return
+    except Exception as e:
+        print(f'Error: {seg_path}, {e}')
+        return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -1236,8 +1236,6 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_areas[side] = -1
                 foramens_imgs[side] = np.flipud(foramen_bin)
         else:
-            if foramens_name == "foramens_L5-S" and side == "right":
-                print()
             closest_foramen_mask_list = []
             for i in range(4):
                 # Dilate foramen mask and find largest connected component to extract foramen area
