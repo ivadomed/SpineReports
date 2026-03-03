@@ -580,7 +580,7 @@ def measure_seg(img, seg, label, mapping):
             continue
 
         # Compute foramens properties
-        foramens_areas, foramens_imgs = measure_foramens(foramens_name=foramens_name, seg_foramen_data=seg_foramen_data, canal_centerline=centerline, spine_centerline=spine_centerline, pr=pr)
+        foramens_areas, foramens_imgs = measure_foramens(foramens_name=foramens_name, seg_foramen_data=seg_foramen_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, spine_centerline=spine_centerline, pr=pr)
     
         # Save image
         for side,image in foramens_imgs.items():
@@ -1065,7 +1065,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
     return properties, img_dict, body_array, True
 
-def measure_foramens(foramens_name, seg_foramen_data, canal_centerline, spine_centerline, pr):
+def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_centerline, spine_centerline, pr):
     '''
     This function measures the surface of the left and right neural foramen formed by 2 vertebrae and a disc
 
@@ -1084,6 +1084,7 @@ def measure_foramens(foramens_name, seg_foramen_data, canal_centerline, spine_ce
     '''
     # Extract vertebrae and disc coords
     foramens_coords = np.argwhere(seg_foramen_data > 0)
+    canal_coords = np.argwhere(seg_canal_data > 0)
 
     # Extract z position (SI) of the disc center of mass
     if 2 in seg_foramen_data:
@@ -1100,7 +1101,7 @@ def measure_foramens(foramens_name, seg_foramen_data, canal_centerline, spine_ce
     canal_pos, canal_deriv = canal_centerline['position'][:,closest_canal_idx], canal_centerline['derivative'][:,closest_canal_idx]
     spine_pos, spine_deriv = spine_centerline['position'][:,closest_spine_idx], spine_centerline['derivative'][:,closest_spine_idx] 
 
-    # Create two perpendicular vectors u1 and u2
+    # Create vector w with canal centerline and spine centerline
     v = canal_deriv/np.linalg.norm(canal_deriv)
     w = spine_pos - canal_pos
     w = w/np.linalg.norm(w)
@@ -1119,30 +1120,30 @@ def measure_foramens(foramens_name, seg_foramen_data, canal_centerline, spine_ce
     # Neurological orientation (patient's left is radiological right)
     halfs = {"left": foramens_coords[pos_coords], "right":foramens_coords[neg_coords]}
 
-    x_all_coords = np.dot(foramens_coords, n)
-    y_all_coords = np.dot(foramens_coords, w)
-    min_x, min_y = np.min(x_all_coords), np.min(y_all_coords)
-    x_all_coords = x_all_coords - min_x
-    y_all_coords = y_all_coords - min_y
-    seg = np.zeros((np.round(np.max(x_all_coords)).astype(int), np.round(np.max(y_all_coords)).astype(int)))
-    for i, (side, coords) in enumerate(halfs.items()):
-        # Project coords in vw plane
-        x_coords = np.dot(coords, n)
-        y_coords = np.dot(coords, w)
+    # x_all_coords = np.dot(foramens_coords, n)
+    # y_all_coords = np.dot(foramens_coords, w)
+    # min_x, min_y = np.min(x_all_coords), np.min(y_all_coords)
+    # x_all_coords = x_all_coords - min_x
+    # y_all_coords = y_all_coords - min_y
+    # seg = np.zeros((np.round(np.max(x_all_coords)).astype(int), np.round(np.max(y_all_coords)).astype(int)))
+    # for i, (side, coords) in enumerate(halfs.items()):
+    #     # Project coords in vw plane
+    #     x_coords = np.dot(coords, n)
+    #     y_coords = np.dot(coords, w)
 
-        # Center the image onto the segmentation
-        x_coords = x_coords - min_x
-        y_coords = y_coords - min_y
+    #     # Center the image onto the segmentation
+    #     x_coords = x_coords - min_x
+    #     y_coords = y_coords - min_y
 
-        # Round coordinates
-        x_coords = np.round(x_coords).astype(int)
-        y_coords = np.round(y_coords).astype(int)
+    #     # Round coordinates
+    #     x_coords = np.round(x_coords).astype(int)
+    #     y_coords = np.round(y_coords).astype(int)
 
-        # Create image
-        for x, y in zip(x_coords, y_coords):
-            seg[x-1, y-1]=i+1
-    os.makedirs(f'test/foramens/', exist_ok=True)
-    cv2.imwrite(f'test/foramens/{foramens_name}_projection.png', seg*127)
+    #     # Create image
+    #     for x, y in zip(x_coords, y_coords):
+    #         seg[x-1, y-1]=i+1
+    # os.makedirs(f'test/foramens/', exist_ok=True)
+    # cv2.imwrite(f'test/foramens/{foramens_name}_projection.png', seg*127)
     # # Project foramen by layer
     # for side, coords in halfs.items():
     #     z_coords = np.dot(coords, n)
@@ -1178,36 +1179,97 @@ def measure_foramens(foramens_name, seg_foramen_data, canal_centerline, spine_ce
         # Project coords in vw plane
         x_coords = np.dot(coords, v)
         y_coords = np.dot(coords, w)
+        canal_coords_x = np.dot(canal_coords, v)
+        canal_coords_y = np.dot(canal_coords, w)
+        spine_coord_x = np.dot(spine_pos, v)
+        spine_coord_y = np.dot(spine_pos, w)
 
         # Center the image onto the segmentation
-        x_coords = x_coords - np.min(x_coords)
-        y_coords = y_coords - np.min(y_coords)
+        min_x = np.min(x_coords)
+        min_y = np.min(y_coords)
+        x_coords = x_coords - min_x
+        y_coords = y_coords - min_y
+        canal_coords_x = canal_coords_x - min_x
+        canal_coords_y = canal_coords_y - min_y
+        spine_coord_x = spine_coord_x - min_x
+        spine_coord_y = spine_coord_y - min_y
 
         # Round coordinates
         x_coords = np.round(x_coords).astype(int)
         y_coords = np.round(y_coords).astype(int)
+        canal_coords_x = np.round(canal_coords_x).astype(int)
+        canal_coords_y = np.round(canal_coords_y).astype(int)
+        spine_coord_x = np.round(spine_coord_x).astype(int)
+        spine_coord_y = np.round(spine_coord_y).astype(int)
 
         # Create image
         seg = np.zeros((np.max(x_coords), np.max(y_coords)))
+        for x, y in zip(canal_coords_x, canal_coords_y):
+            if x > 0 and y > 0 and x-1 < seg.shape[0] and y-1 < seg.shape[1]:
+                seg[x-1, y-1]=2
+        
         for x, y in zip(x_coords, y_coords):
             seg[x-1, y-1]=1
-
+        
         # Inverse image
-        labeled_bg = morphology.remove_small_objects(~seg.astype(bool), min_size=2)
+        foramen_bg = morphology.remove_small_objects(~(seg==1).astype(bool), min_size=2)
+        canal_bg = morphology.remove_small_objects((seg==2).astype(bool), min_size=2)
 
         # Padd image to connect exterior components
-        labeled_bg = np.pad(labeled_bg, pad_width=(5,5), mode='constant', constant_values=1)
+        spine_coord_x = spine_coord_x + 5
+        spine_coord_y = spine_coord_y + 5
+        foramen_bin = np.pad(foramen_bg, pad_width=(5,5), mode='constant', constant_values=1)
+        canal_bin = np.pad(canal_bg, pad_width=(5,5), mode='constant', constant_values=0)
 
         # Label all component and extract regions
-        labeled_img, _ = ndi.label(labeled_bg)
-        regions = measure.regionprops(labeled_img)
+        labeled_foramen, _ = ndi.label(foramen_bin)
+        foramen_regions = measure.regionprops(labeled_foramen)
+
+        labeled_canal, _ = ndi.label(canal_bin)
+        canal_regions = measure.regionprops(labeled_canal)
+
+        # Match components between canal and foramen
+        match_dict = {}
+        for val in np.unique(labeled_canal):
+            if val != 0:
+                mask = labeled_canal == val
+                vals = np.unique(labeled_foramen[mask])
+                if len(vals) > 1:
+                    raise ValueError('Error in matching canal and foramen components, multiple matches found.')
+                else:
+                    match_dict[int(val)] = int(vals[0])
         
         # Save foramens
-        areas = [region.area for region in regions]
-        if len(areas) > 1:
-            # Select second biggest region assuming it is the foramen
-            foramen_region = regions[np.argsort(areas)[-2]]
-            foramen_mask = labeled_img == foramen_region.label
+        if len(canal_regions) > 1:
+            # Find region closer to spine coordinate
+            if len(foramen_regions) > 1:
+                foramen_areas = [region.area for region in foramen_regions]
+                foramen_regions_nomax = [region for region in foramen_regions if region.area != np.max(foramen_areas)]
+                spine_foramen_dists = [np.sqrt((region.centroid[0]-spine_coord_x)**2 + (region.centroid[1]-spine_coord_y)**2) for region in foramen_regions_nomax]
+                sorted_foramen_regions = [region for _, region in sorted(zip(spine_foramen_dists, foramen_regions_nomax), key=lambda x: x[0])]                    
+                closest_canal_region = None
+                for foramen_region in sorted_foramen_regions:
+                    mathing_list = [match_dict[region.label] == foramen_region.label for region in canal_regions]
+                    if any(mathing_list):
+                        closest_canal_region = canal_regions[mathing_list.index(True)]
+                        closest_foramen_region = foramen_region
+                        break
+                
+                if closest_canal_region is None:
+                    # If no match is found, find closest canal region to spine coordinate
+                    canal_dists = [np.sqrt((region.centroid[0]-spine_coord_x)**2 + (region.centroid[1]-spine_coord_y)**2) for region in canal_regions]
+                    closest_canal_region = canal_regions[np.argmin(canal_dists)]
+                    foramen_mask = labeled_canal == closest_canal_region.label
+                else:
+                    if closest_foramen_region.area <= 2*closest_canal_region.area:
+                        # Check if there is a match in region size
+                        foramen_mask = labeled_foramen == closest_foramen_region.label
+                    else:
+                        foramen_mask = labeled_canal == closest_canal_region.label
+            else:
+                canal_dists = [np.sqrt((region.centroid[0]-spine_coord_x)**2 + (region.centroid[1]-spine_coord_y)**2) for region in canal_regions]
+                closest_canal_region = canal_regions[np.argmin(canal_dists)]
+                foramen_mask = labeled_canal == closest_canal_region.label                
 
             # Calculate foramen area
             pixel_surface = pr**2
@@ -1215,11 +1277,10 @@ def measure_foramens(foramens_name, seg_foramen_data, canal_centerline, spine_ce
             foramens_areas[side] = foramen_area
             
             # Flip the foraminal image upside-down for better visual
-            foramens_imgs[side] = np.flipud(labeled_bg) + np.flipud(foramen_mask.astype(int))
+            foramens_imgs[side] = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
         else:
-            #print('Error with foramen, possibly not closed shape.')
             foramens_areas[side] = -1
-            foramens_imgs[side] = np.flipud(labeled_bg)
+            foramens_imgs[side] = np.flipud(foramen_bin)
     return foramens_areas, foramens_imgs
 
 def find_intensity_peaks(values):
@@ -1697,13 +1758,17 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-029_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
+    
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
 
     ofolder_path = 'test'
 
