@@ -1164,8 +1164,8 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
             seg[x-1, y-1]=1
         
         # Inverse image
-        foramen_bg = morphology.remove_small_objects(~(seg==1).astype(bool), min_size=3)
-        canal_bg = morphology.remove_small_objects((seg==2).astype(bool), min_size=3)
+        foramen_bg = morphology.remove_small_objects(~(seg==1).astype(bool), min_size=5)
+        canal_bg = morphology.remove_small_objects((seg==2).astype(bool), min_size=5)
 
         # Padd image to connect exterior components
         spine_coord_x = spine_coord_x + 5
@@ -1173,7 +1173,7 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
         foramen_bin = np.pad(foramen_bg, pad_width=(5,5), mode='constant', constant_values=1)
         canal_bin = np.pad(canal_bg, pad_width=(5,5), mode='constant', constant_values=0)
 
-        if "C" in foramens_name:
+        if foramens_name == "foramens_C1-C2":
             # Use spinal canal for cervical foramens (seems more robust)
             # Label all component and extract regions
             labeled_foramen, _ = ndi.label(foramen_bin)
@@ -1236,7 +1236,7 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_areas[side] = -1
                 foramens_imgs[side] = np.flipud(foramen_bin)
         else:
-            closest_foramen_mask_list = []
+            foramen_masks_list = []
             for i in range(4):
                 # Dilate foramen mask and find largest connected component to extract foramen area
                 foramen_bin_dilate = morphology.binary_dilation(~foramen_bin, morphology.disk(i))
@@ -1244,15 +1244,20 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramen_regions = measure.regionprops(labeled_foramen)
                 if len(foramen_regions) > 1:
                     foramen_areas = [region.area for region in foramen_regions]
-                    closest_foramen_region = foramen_regions[np.argsort(foramen_areas)[-2]] # Take second largest region
-                    eroded_mask = labeled_foramen == closest_foramen_region.label
-                    dilated_mask = morphology.binary_erosion(~eroded_mask, morphology.disk(i)) # Dilate to the original shape
-                    closest_foramen_mask_list.append(~dilated_mask)
-            if len(closest_foramen_mask_list) != 0:
-                list_confidence_vector = [foramen_confidence_score(mask, closest_foramen_mask_list) for mask in closest_foramen_mask_list]
-                closest_foramen_short_list = [mask for mask in closest_foramen_mask_list if foramen_confidence_score(mask, closest_foramen_mask_list) == np.max(list_confidence_vector)]
-                areas = [np.sum(mask) for mask in closest_foramen_short_list]
-                foramen_mask = closest_foramen_short_list[np.argmax(areas)]
+                    foramen_regions_nomax = [region for region in foramen_regions if region.area != np.max(foramen_areas)]
+                    spine_foramen_dists = [np.sqrt((region.centroid[0]-spine_coord_x)**2 + (region.centroid[1]-spine_coord_y)**2) for region in foramen_regions_nomax]
+                    sorted_foramen_regions = [region for _, region in sorted(zip(spine_foramen_dists, foramen_regions_nomax), key=lambda x: x[0])]
+                    sorted_eroded_masks = [labeled_foramen == region.label for region in sorted_foramen_regions]
+                    sorted_dilated_masks = [~morphology.binary_erosion(~eroded_mask, morphology.disk(i)) for eroded_mask in sorted_eroded_masks] # Dilate to the original shape
+                    if len(sorted_dilated_masks) > 1:
+                        foramen_masks_list.append(sorted_dilated_masks[:2]) # Keep only the 2 closest regions to the spine coordinate
+                    else:
+                        foramen_masks_list.append(sorted_dilated_masks)
+            if len(foramen_masks_list) != 0:
+                concatenated_foramen_masks_list = [mask for sublist in foramen_masks_list for mask in sublist]
+                list_confidence_vector = [foramen_confidence_score(mask, concatenated_foramen_masks_list) for mask in concatenated_foramen_masks_list]
+                closest_foramen_short_list = [mask for mask in concatenated_foramen_masks_list if foramen_confidence_score(mask, concatenated_foramen_masks_list) == np.max(list_confidence_vector)]
+                foramen_mask = closest_foramen_short_list[0] # Choose the first mask
                 # Calculate foramen area
                 pixel_surface = pr**2
                 foramen_area = np.argwhere(foramen_mask > 0).shape[0]*pixel_surface #mm2
@@ -1267,7 +1272,7 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
     return foramens_areas, foramens_imgs
 
 def foramen_confidence_score(mask, mask_list):
-    return np.sum([2*np.sum((mask * mask_i))/(np.sum(mask_i)+np.sum(mask)) > 0.5 for mask_i in mask_list])
+    return np.sum([2*np.sum((mask * mask_i))/(np.sum(mask_i)+np.sum(mask)) > 0.60 for mask_i in mask_list])
 
 def find_intensity_peaks(values):
     '''
@@ -1748,9 +1753,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-035_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-035_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-035_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-029_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
