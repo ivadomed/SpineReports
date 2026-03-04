@@ -885,7 +885,6 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
     # Extract z position (SI) of the vertebra
     vert_pos = np.mean(coords,axis=0)
-    z_mean = vert_pos[-1]
 
     # Exclude vertebrae touching image boundary
     if coords[:,2].max() == seg_vert_data.shape[2]-1 or coords[:,2].min() == 0:
@@ -905,7 +904,8 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     #     cv2.imwrite(f'test/canal/projection_{i}.png', canal_slice_rgb*255)
 
     # Find closest point and derivative onto the canal centerline
-    closest_canal_idx = np.argmin(abs(canal_centerline['position'][2]-z_mean))
+    canal_dist = np.linalg.norm(canal_centerline['position'].T - vert_pos, axis=1)
+    closest_canal_idx = np.argmin(canal_dist)
     canal_pos = canal_centerline['position'][:,closest_canal_idx]
     canal_deriv = canal_centerline['derivative'][:,closest_canal_idx]
 
@@ -975,6 +975,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
     u = np.cross(v, w) # create last vector
 
     # Find canal distance to vertebral body
+    z_mean = canal_pos[2]
     canal_slice_coords = np.argwhere(seg_canal_data[:,:,int(np.round(z_mean))]>0)
     projections = np.dot(canal_slice_coords-canal_pos[:2], w[:2])
 
@@ -1093,17 +1094,15 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
     # Extract z position (SI) of the disc center of mass
     if 2 in seg_foramen_data:
         disc_coords = np.argwhere(seg_foramen_data == 2)
-        disc_pos = np.mean(disc_coords,axis=0)
-        z_mean = disc_pos[-1]
+        ref_pos = np.mean(disc_coords,axis=0)
     else:
-        foramen_pos = np.mean(foramens_coords,axis=0)
-        z_mean = foramen_pos[-1]
+        ref_pos = np.mean(foramens_coords,axis=0)
 
-    # Find closest point and derivative onto the canal centerline
-    closest_canal_idx = np.argmin(abs(canal_centerline['position'][2]-z_mean))
-    closest_spine_idx = np.argmin(abs(spine_centerline['position'][2]-z_mean))
-    canal_pos, canal_deriv = canal_centerline['position'][:,closest_canal_idx], canal_centerline['derivative'][:,closest_canal_idx]
-    spine_pos, spine_deriv = spine_centerline['position'][:,closest_spine_idx], spine_centerline['derivative'][:,closest_spine_idx] 
+    # Find closest point using distance to the centerline
+    canal_dist = np.linalg.norm(canal_centerline['position'].T - ref_pos, axis=1)
+    spine_dist = np.linalg.norm(spine_centerline['position'].T - ref_pos, axis=1)
+    canal_pos, canal_deriv = canal_centerline['position'][:,np.argmin(canal_dist)], canal_centerline['derivative'][:,np.argmin(canal_dist)]
+    spine_pos, spine_deriv = spine_centerline['position'][:,np.argmin(spine_dist)], spine_centerline['derivative'][:,np.argmin(spine_dist)]
 
     # Create vector w with canal centerline and spine centerline
     v = canal_deriv/np.linalg.norm(canal_deriv)
