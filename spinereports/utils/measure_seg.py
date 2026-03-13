@@ -580,23 +580,27 @@ def measure_seg(img, seg, label, mapping):
             continue
 
         # Compute foramens properties
-        foramens_areas, foramens_imgs, foramens_intensities = measure_foramens(foramens_name=foramens_name, img_data=img.data, seg_foramen_data=seg_foramen_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, spine_centerline=spine_centerline, pr=pr)
+        foramens_areas, foramens_img, foramens_seg = measure_foramens(foramens_name=foramens_name, img_data=img.data, seg_foramen_data=seg_foramen_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, spine_centerline=spine_centerline, pr=pr)
     
-        # Save image
-        for side,image in foramens_imgs.items():
-            imgs[f'{foramens_name}_{side}'] = image
+        # Save images
+        for side,im in foramens_seg.items():
+            imgs[f'{foramens_name}_{side}_seg'] = im
+        
+        for side,im in foramens_img.items():
+            imgs[f'{foramens_name}_{side}_img'] = im
         
         # Save foramen metrics
         foramens_row = {
             "structure": "foramen",
             "name": foramens_name,
             "right_surface": foramens_areas['right'],
-            "left_surface": foramens_areas['left'],
-            "right_intensity": foramens_intensities['right'],
-            "left_intensity": foramens_intensities['left']
+            "left_surface": foramens_areas['left']
         }
         foramens_rows.append(foramens_row)
-    metrics['foramens'] = foramens_rows
+
+    # Compute foramen compression ratio using all extracted foramens
+    metrics['foramens'], imgs = compute_foramen_compression_ratio(foramens_rows, imgs)
+
 
     # Compute metrics onto intervertebral discs
     rows = []
@@ -1127,16 +1131,16 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
         ref_pos = canal_pos + 2*w # Arbitrary position 2mm away from canal in the direction of w for C1-C2 foramens since there is no disc
 
     # Generate mask to extract image intensity
-    cropped_canal_mask = seg_canal_data.copy()
+    cropped_canal_mask = seg_canal_data.astype(bool).astype(int).copy()
     foramen_cube_mask = np.zeros_like(seg_foramen_data)
     foramen_cube_mask[np.min(foramens_coords[:,0]):np.max(foramens_coords[:,0]), np.min(foramens_coords[:,1]):np.max(foramens_coords[:,1]), np.min(foramens_coords[:,2]):np.max(foramens_coords[:,2])] = 1
     cropped_canal_mask[~foramen_cube_mask.astype(bool)] = 0 # Keep only canal at foramen level
-    dilated_canal_mask = morphology.binary_dilation(cropped_canal_mask, morphology.ball(8))
+    dilated_canal_mask = morphology.binary_dilation(cropped_canal_mask, morphology.ball(10))
     canal_dilated_coords = np.argwhere((dilated_canal_mask-cropped_canal_mask) > 0)
     canal_dilated_values = img_data[canal_dilated_coords[:, 0], canal_dilated_coords[:, 1], canal_dilated_coords[:, 2]]
-    canal_dilated_proj_v = np.round(np.dot(canal_dilated_coords, v)).astype(int) # SI*
-    canal_dilated_proj_w = np.round(np.dot(canal_dilated_coords, w)).astype(int) # AP*
-    canal_dilated_proj_n = np.round(np.dot(canal_dilated_coords, n)).astype(int) # RL*
+    canal_dilated_proj_v = np.round(np.dot(canal_dilated_coords-canal_pos, v)).astype(int) # SI*
+    canal_dilated_proj_w = np.round(np.dot(canal_dilated_coords-canal_pos, w)).astype(int) # AP*
+    canal_dilated_proj_n = np.round(np.dot(canal_dilated_coords-canal_pos, n)).astype(int) # RL*
 
     # Distinguish left-from-right
     pos_coords = dot_product>0
@@ -1147,17 +1151,17 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
 
     # Project foramens
     foramens_areas = {}
-    foramens_imgs = {}
-    foramens_intensities = {}
+    foramens_seg = {}
+    foramens_img = {}
     for side, coords in halfs.items():
         foramen_mask = None
         # Project coords in vw plane
-        x_coords = np.dot(coords, v)
-        y_coords = np.dot(coords, w)
-        canal_coords_x = np.dot(canal_coords, v)
-        canal_coords_y = np.dot(canal_coords, w)
-        ref_coord_x = np.dot(ref_pos, v)
-        ref_coord_y = np.dot(ref_pos, w)
+        x_coords = np.dot(coords-canal_pos, v)
+        y_coords = np.dot(coords-canal_pos, w)
+        canal_coords_x = np.dot(canal_coords-canal_pos, v)
+        canal_coords_y = np.dot(canal_coords-canal_pos, w)
+        ref_coord_x = np.dot(ref_pos-canal_pos, v)
+        ref_coord_y = np.dot(ref_pos-canal_pos, w)
 
         # Center the image onto the segmentation
         min_x = np.min(x_coords)
@@ -1259,13 +1263,13 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
 
                 # Remove padding
                 img_padding = padding - 5
-                foramens_imgs[side] = img[img_padding:-img_padding, img_padding:-img_padding]
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
             else:
                 foramens_areas[side] = -1
                 img = np.flipud(foramen_bin)
                 # Remove padding
                 img_padding = padding - 5
-                foramens_imgs[side] = img[img_padding:-img_padding, img_padding:-img_padding]
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
         else:
             foramen_masks_list = []
             for i in range(8):
@@ -1304,34 +1308,30 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
 
                 # Remove padding
                 img_padding = padding - 5
-                foramens_imgs[side] = img[img_padding:-img_padding, img_padding:-img_padding]
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
             else:
                 foramens_areas[side] = -1
                 img = np.flipud(foramen_bin)
                 # Remove padding
                 img_padding = padding - 5
-                foramens_imgs[side] = img[img_padding:-img_padding, img_padding:-img_padding]
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
                 foramen_mask = None
-        
+        foramens_img[side] = np.zeros(foramens_seg[side].shape, dtype=np.float32)
         ## Extract foramen intensity from extruded 2D foramen mask intersected with canal shell
         if foramen_mask is None or np.sum(foramen_mask) == 0 or canal_dilated_coords.shape[0] == 0:
-            foramens_intensities[side] = -1
             continue
 
         # Remove max padding
         foramen_mask_no_pad = foramen_mask[padding:-padding, padding:-padding]
         foramen_mask_3d = np.array([foramen_mask_no_pad]*img_data.shape[0])
 
-        # Project canal pos
-        canal_pos_proj_n = np.dot(canal_pos, n)
-
         # Extract projected mask coords
         foramen_coords_3d = np.argwhere(foramen_mask_3d > 0)
 
         if side == "left":
-            foramen_coords_3d[:, 0] = np.round(canal_pos_proj_n + foramen_coords_3d[:, 0]).astype(int) # n
+            foramen_coords_3d[:, 0] = np.round(foramen_coords_3d[:, 0]).astype(int) # n
         else:
-            foramen_coords_3d[:, 0] = np.round(canal_pos_proj_n - foramen_coords_3d[:, 0]).astype(int) # n
+            foramen_coords_3d[:, 0] = np.round(-foramen_coords_3d[:, 0]).astype(int) # n
         foramen_coords_3d[:, 1] = np.round(foramen_coords_3d[:, 1] + min_x).astype(int) # v
         foramen_coords_3d[:, 2] = np.round(foramen_coords_3d[:, 2] + min_y).astype(int) # w
 
@@ -1342,34 +1342,65 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
         foramen_coords_3d[:, 1] = foramen_coords_3d[:, 1] - min_v
         foramen_coords_3d[:, 2] = foramen_coords_3d[:, 2] - min_w
         foramen_coords_3d[:, 0] = foramen_coords_3d[:, 0] - min_n
-        canal_dilated_proj_v = canal_dilated_proj_v - min_v
-        canal_dilated_proj_w = canal_dilated_proj_w - min_w
-        canal_dilated_proj_n = canal_dilated_proj_n - min_n
-        max_v = np.max(np.concatenate([foramen_coords_3d[:, 1], canal_dilated_proj_v], axis=0)) # SI
-        max_w = np.max(np.concatenate([foramen_coords_3d[:, 2], canal_dilated_proj_w], axis=0)) # AP
-        max_n = np.max(np.concatenate([foramen_coords_3d[:, 0], canal_dilated_proj_n], axis=0)) # RL
+        canal_dilated_proj_v_side = canal_dilated_proj_v - min_v
+        canal_dilated_proj_w_side = canal_dilated_proj_w - min_w
+        canal_dilated_proj_n_side = canal_dilated_proj_n - min_n
+        max_v = np.max(np.concatenate([foramen_coords_3d[:, 1], canal_dilated_proj_v_side], axis=0)) # SI
+        max_w = np.max(np.concatenate([foramen_coords_3d[:, 2], canal_dilated_proj_w_side], axis=0)) # AP
+        max_n = np.max(np.concatenate([foramen_coords_3d[:, 0], canal_dilated_proj_n_side], axis=0)) # RL
 
-        seg_3d_foramen = np.zeros((max_n + 1, max_w + 1, max_v + 1), dtype=np.uint8) # RL, AP, SI
-        for x, y, z in zip(foramen_coords_3d[:, 0], foramen_coords_3d[:, 2], foramen_coords_3d[:, 1]):
+        seg_3d_foramen = np.zeros((max_n, max_v, max_w), dtype=np.uint8) # RL, AP, SI
+        for x, y, z in zip(foramen_coords_3d[:, 0], foramen_coords_3d[:, 1], foramen_coords_3d[:, 2]):
             if x > 0 and y > 0 and x-1 < seg_3d_foramen.shape[0] and y-1 < seg_3d_foramen.shape[1] and z-1 < seg_3d_foramen.shape[2]:
                 seg_3d_foramen[x-1, y-1, z-1] = 1
         
-        seg_3d_canal = np.zeros((max_n + 1, max_w + 1, max_v + 1), dtype=np.float32) # RL, AP, SI
-        for val, x, y, z in zip(canal_dilated_values, canal_dilated_proj_n, canal_dilated_proj_w, canal_dilated_proj_v):
+        seg_3d_canal = np.zeros((max_n, max_v, max_w), dtype=np.float32) # RL, AP, SI
+        img_3d_foramen = np.zeros((max_n, max_v, max_w), dtype=np.float32) # RL, AP, SI
+        for val, x, y, z in zip(canal_dilated_values, canal_dilated_proj_n_side, canal_dilated_proj_v_side, canal_dilated_proj_w_side):
             if x > 0 and y > 0 and x-1 < seg_3d_canal.shape[0] and y-1 < seg_3d_canal.shape[1] and z-1 < seg_3d_canal.shape[2]:
-                seg_3d_canal[x-1, y-1, z-1] = val
+                seg_3d_canal[x-1, y-1, z-1] = 1
+                img_3d_foramen[x-1, y-1, z-1] = val
 
-        seg_intersection = seg_3d_foramen * seg_3d_canal
-        inter_vals = seg_intersection[seg_intersection > 0]
-        if foramens_name == "foramens_L2-L3":
-            print(f"foramen {side}")
-            print()
-        if inter_vals.size > 0:
-            foramens_intensities[side] = float(np.median(inter_vals))
+        mask_intersection = seg_3d_foramen * seg_3d_canal
+        img_3d_foramen_intersection = img_3d_foramen * mask_intersection
+        median_idx = int(np.median(np.argwhere(mask_intersection!=0)[:,0]))
+
+        if side == 'left':
+            img_slice = np.sum(img_3d_foramen_intersection[median_idx:], axis=0)
         else:
-            foramens_intensities[side] = -1
+            img_slice = np.sum(img_3d_foramen_intersection[:median_idx], axis=0)
 
-    return foramens_areas, foramens_imgs, foramens_intensities
+        # Crop around the foramen
+        nonzero = np.argwhere(img_slice!=0)
+        # low_signal = np.percentile(inter_vals, 20)
+        # compression_fraction = np.argwhere(img_slice>=low_signal).shape[0]/nonzero.shape[0]
+        # im = (im - mi) / (ma - mi + 1e-8)
+        crop_size = (np.min(nonzero[:,0]), np.max(nonzero[:,0]), np.min(nonzero[:,1]), np.max(nonzero[:,1]))
+        im = img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]]
+        shape = foramens_img[side].shape
+        foramens_img[side][shape[0]//2-im.shape[0]//2:shape[0]//2+im.shape[0]-im.shape[0]//2, shape[1]//2-im.shape[1]//2:shape[1]//2+im.shape[1]-im.shape[1]//2] = im
+    return foramens_areas, foramens_img, foramens_seg
+
+def compute_foramen_compression_ratio(metric_rows, imgs):
+    foramens_list = [v for k,v in imgs.items() if k.startswith("foramens") and k.endswith("img")]
+    foramens_name = [k for k,v in imgs.items() if k.startswith("foramens") and k.endswith("img")]
+    min_signal_list = [np.percentile(foramen_img[foramen_img!=0], 30) if np.sum(foramen_img) > 0 else 0 for foramen_img in foramens_list]
+    min_signal = np.median(min_signal_list)
+    compression_ratio = [(foramen_img>min_signal).sum()/(foramen_img!=0).sum() if np.sum(foramen_img) > 0 else 1 for foramen_img in foramens_list]
+    rows_name = [row['name'] for row in metric_rows]
+    for i, name in enumerate(foramens_name):
+        foramen_name = "_".join(name.split("_")[:2])
+        metric_row_idx = rows_name.index(foramen_name)
+        side = name.split("_")[2]
+        metric_rows[metric_row_idx][f"{side}_compression_ratio"] = compression_ratio[i]
+        # normalize foramen image for visualization
+        if np.sum(foramens_list[i]) > 0:
+            im = foramens_list[i]
+            ma = np.max(im)
+            mi = np.min(im)
+            im = (im - mi) / (ma - mi + 1e-8)
+            imgs[name] = im
+    return metric_rows, imgs
 
 def foramen_confidence_score(mask, mask_list):
     return np.sum([2*np.sum((mask * mask_i))/(np.sum(mask_i)+np.sum(mask)) > 0.60 for mask_i in mask_list])
@@ -1853,9 +1884,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-130_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-130_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-130_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
