@@ -900,9 +900,12 @@ def measure_canal(seg_canal, centerline, spine_centerline):
         x_coords_slice_spine = x_coords_spine[mask_slice_spine]
         y_coords_slice_spine = y_coords_spine[mask_slice_spine]
 
+        x_coords_slice_centerline_canal = np.array([0])
+        y_coords_slice_centerline_canal = np.array([0])
+
         # Center coordinates
-        min_x = np.min(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine]))
-        min_y = np.min(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine]))
+        min_x = np.min(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine, x_coords_slice_centerline_canal]))
+        min_y = np.min(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine, y_coords_slice_centerline_canal]))
         x_coords_slice_canal = np.round(x_coords_slice_canal - min_x).astype(int)
         y_coords_slice_canal = np.round(y_coords_slice_canal - min_y).astype(int)
         if any(x_coords_slice_sc) and any(y_coords_slice_sc):
@@ -910,8 +913,10 @@ def measure_canal(seg_canal, centerline, spine_centerline):
             y_coords_slice_sc = np.round(y_coords_slice_sc - min_y).astype(int)
         x_coords_slice_spine = np.round(x_coords_slice_spine - min_x).astype(int)
         y_coords_slice_spine = np.round(y_coords_slice_spine - min_y).astype(int)
-        max_x = np.round(np.max(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine]))).astype(int)
-        max_y = np.round(np.max(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine]))).astype(int)
+        x_coords_slice_centerline_canal = np.round(x_coords_slice_centerline_canal - min_x).astype(int)
+        y_coords_slice_centerline_canal = np.round(y_coords_slice_centerline_canal - min_y).astype(int)
+        max_x = np.round(np.max(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine, x_coords_slice_centerline_canal]))).astype(int)
+        max_y = np.round(np.max(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine, y_coords_slice_centerline_canal]))).astype(int)
 
         # Create patches
         canal_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
@@ -923,11 +928,15 @@ def measure_canal(seg_canal, centerline, spine_centerline):
         
         spine_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
         spine_slice[x_coords_slice_spine, y_coords_slice_spine] = 1
+
+        centerline_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
+        centerline_slice[x_coords_slice_centerline_canal, y_coords_slice_centerline_canal] = 1
         
         # Pad patches to avoid edge effect when calculating shape properties
         canal_slice = np.pad(canal_slice, pad_width=(5, 5), mode='constant', constant_values=0)
         sc_slice = np.pad(sc_slice, pad_width=(5, 5), mode='constant', constant_values=0)
         spine_slice = np.pad(spine_slice, pad_width=(5, 5), mode='constant', constant_values=0)
+        centerline_slice = np.pad(centerline_slice, pad_width=(5, 5), mode='constant', constant_values=0)
 
         # Remove small objects from canal slice to avoid issues in shape properties calculation
         canal_slice = (~morphology.remove_small_objects(~canal_slice.astype(bool), min_size=2)).astype(int)
@@ -935,7 +944,7 @@ def measure_canal(seg_canal, centerline, spine_centerline):
 
         # Calculate shape metrics
         # shape_property = _properties2d(patch_canal_scaled, patch_sc_scaled, patch_centerline_scaled, [px, py])
-        shape_property = _properties2d(canal_slice, sc_slice, spine_slice, [px, py])
+        shape_property = _properties2d(canal_slice, sc_slice, centerline_slice, spine_slice, [px, py])
 
         if shape_property is not None:
             # Loop across properties and assign values for function output
@@ -1694,11 +1703,12 @@ def bspline(x, y, xref, smooth, deg_bspline=3, pz=1):
     y_fit_der = interpolate.splev(xref, tck, der=1)
     return y_fit, y_fit_der
 
-def _properties2d(canal, spinalcord, spine_centerline, dim):
+def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
     """
     Compute shape property of the input 2D image. Accounts for partial volume information.
     :param canal: 2D input canal image in uint8 or float (weighted for partial volume) that has a single object.
     :param spinalcord: 2D input spinal cord image in uint8 or float (weighted for partial volume).
+    :param centerline: 2D input canal centerline image in uint8 or float (weighted for partial volume).
     :param spine_centerline: 2D input spine centerline image in uint8 or float (weighted for partial volume).
     :param dim: [px, py]: Physical dimension of the image (in mm). X,Y respectively correspond to AP,RL.
     :return:
@@ -1719,8 +1729,8 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
     canal_bin = np.array(canal_norm > 0.5, dtype='uint8')
 
     # Extract canal slice center of mass
-    canal_coords = np.nonzero(canal_bin)
-    canal_pos = np.array([np.round(np.mean(canal_coords[0])), np.round(np.mean(canal_coords[1]))])
+    centerline_coords = np.nonzero(centerline)
+    canal_pos = np.array([np.round(np.mean(centerline_coords[0])), np.round(np.mean(centerline_coords[1]))])
 
     # Create vector v from canal_pos to spine pos and normalize it
     v = spine_pos - canal_pos
@@ -1767,8 +1777,8 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
         spinalcord_bin = np.array(spinalcord_norm > 0.5, dtype='uint8')
 
         # Extract spinalcord slice center of mass
-        spinalcord_coords = np.nonzero(spinalcord_bin)
-        spinalcord_pos = np.array([np.round(np.mean(spinalcord_coords[0])), np.round(np.mean(spinalcord_coords[1]))])
+        centerline_coords = np.nonzero(centerline)
+        spinalcord_pos = np.array([np.round(np.mean(centerline_coords[0])), np.round(np.mean(centerline_coords[1]))])
 
         # Compute AP diameter along v
         v_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=v, radius=2) # Create cylindrical mask along v
