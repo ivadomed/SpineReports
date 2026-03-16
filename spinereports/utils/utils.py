@@ -64,12 +64,12 @@ def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_
         # Inverse neg_coords_x to mirror them
         neg_coords_x = -neg_coords_x
 
-        seg1 = np.zeros((np.max(np.concatenate([pos_coords_x, neg_coords_x])), np.max(np.concatenate([neg_coords_y, pos_coords_y]))))
-        seg2 = np.zeros((np.max(np.concatenate([pos_coords_x, neg_coords_x])), np.max(np.concatenate([neg_coords_y, pos_coords_y]))))
+        seg1 = np.zeros((np.max(np.concatenate([pos_coords_x, neg_coords_x]))+1, np.max(np.concatenate([neg_coords_y, pos_coords_y]))+1))
+        seg2 = np.zeros((np.max(np.concatenate([pos_coords_x, neg_coords_x]))+1, np.max(np.concatenate([neg_coords_y, pos_coords_y]))+1))
         if pos_coords.size != 0:
-            seg1[pos_coords_x-1, pos_coords_y-1] = 1
+            seg1[pos_coords_x, pos_coords_y] = 1
         if neg_coords.size != 0:
-            seg2[neg_coords_x-1, neg_coords_y-1] = 1
+            seg2[neg_coords_x, neg_coords_y] = 1
         seg = seg1 - seg2
         diff_sum = np.sum(np.abs(seg))
         return diff_sum

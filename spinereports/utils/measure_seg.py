@@ -1248,13 +1248,13 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
         ref_coord_y = np.round(ref_coord_y).astype(int)
 
         # Create image
-        seg = np.zeros((np.max(x_coords), np.max(y_coords)))
+        seg = np.zeros((np.max(x_coords)+1, np.max(y_coords)+1))
         for x, y in zip(canal_coords_x, canal_coords_y):
             if x > 0 and y > 0 and x-1 < seg.shape[0] and y-1 < seg.shape[1]:
-                seg[x-1, y-1]=2
+                seg[x, y]=2
         
         for x, y in zip(x_coords, y_coords):
-            seg[x-1, y-1]=1
+            seg[x, y]=1
         
         # Inverse image
         foramen_bg = morphology.remove_small_objects(~(seg==1).astype(bool), min_size=10)
@@ -1415,17 +1415,17 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
         max_w = np.max(np.concatenate([foramen_coords_3d[:, 2], canal_dilated_proj_w_side], axis=0)) # AP
         max_n = np.max(np.concatenate([foramen_coords_3d[:, 0], canal_dilated_proj_n_side], axis=0)) # RL
 
-        seg_3d_foramen = np.zeros((max_n, max_v, max_w), dtype=np.uint8) # RL, AP, SI
+        seg_3d_foramen = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.uint8) # RL, AP, SI
         for x, y, z in zip(foramen_coords_3d[:, 0], foramen_coords_3d[:, 1], foramen_coords_3d[:, 2]):
             if x > 0 and y > 0 and x-1 < seg_3d_foramen.shape[0] and y-1 < seg_3d_foramen.shape[1] and z-1 < seg_3d_foramen.shape[2]:
-                seg_3d_foramen[x-1, y-1, z-1] = 1
+                seg_3d_foramen[x, y, z] = 1
         
-        seg_3d_canal = np.zeros((max_n, max_v, max_w), dtype=np.float32) # RL, AP, SI
-        img_3d_foramen = np.zeros((max_n, max_v, max_w), dtype=np.float32) # RL, AP, SI
+        seg_3d_canal = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.float32) # RL, AP, SI
+        img_3d_foramen = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.float32) # RL, AP, SI
         for val, x, y, z in zip(canal_dilated_values, canal_dilated_proj_n_side, canal_dilated_proj_v_side, canal_dilated_proj_w_side):
             if x > 0 and y > 0 and x-1 < seg_3d_canal.shape[0] and y-1 < seg_3d_canal.shape[1] and z-1 < seg_3d_canal.shape[2]:
-                seg_3d_canal[x-1, y-1, z-1] = 1
-                img_3d_foramen[x-1, y-1, z-1] = val
+                seg_3d_canal[x, y, z] = 1
+                img_3d_foramen[x, y, z] = val
 
         mask_intersection = seg_3d_foramen * seg_3d_canal
         img_3d_foramen_intersection = img_3d_foramen * mask_intersection
@@ -1530,10 +1530,10 @@ def fit_ellipsoid(coords, centerline_deriv, min_size=32):
         # Build binary image
         H = ia.max()
         W = ib.max()
-        seg2d = np.zeros((H, W), dtype=bool)
+        seg2d = np.zeros((H+1, W+1), dtype=bool)
         for x, y in zip(ia, ib):
             if x > 0 and y > 0 and x-1 < H and y-1 < W:
-                seg2d[x-1, y-1] = True
+                seg2d[x, y] = True
         
         # Pad image
         seg2d = np.pad(seg2d, pad_width=5, mode='constant', constant_values=0)
