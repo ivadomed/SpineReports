@@ -809,7 +809,9 @@ def measure_canal(seg_canal, centerline, spine_centerline):
         'eccentricity_canal',
         'eccentricity_spinalcord',
         'solidity_canal',
-        'solidity_spinalcord'
+        'solidity_spinalcord',
+        'asymmetry_canal_R_L',
+        'asymmetry_spinalcord_R_L'
     ]
     # Extract canal coords
     canal_coords = np.argwhere(seg_canal.data > 0)
@@ -1727,6 +1729,7 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
 
     # Binarize canal using threshold at 0.5
     canal_bin = np.array(canal_norm > 0.5, dtype='uint8')
+    coords = np.argwhere(canal_bin>0)
 
     # Extract canal slice center of mass
     centerline_coords = np.nonzero(centerline)
@@ -1753,6 +1756,12 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
     projections = np.dot(RL_coords, w)  # Project onto vector
     diameter_RL_canal = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
 
+    # Compute symmetry score using the canal area
+    dot_product = np.dot(coords - canal_pos, w)
+    pos_coords = np.argwhere(dot_product > 0)
+    neg_coords = np.argwhere(dot_product < 0)
+    asymmetry_canal_R_L = len(neg_coords) / (len(pos_coords) + 1e-8)
+
     # Compute area
     area_canal = np.sum(canal_bin) * dim[0] * dim[1]
 
@@ -1775,6 +1784,7 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
 
         # Binarize canal using threshold at 0.5 Necessary input for measure.regionprops
         spinalcord_bin = np.array(spinalcord_norm > 0.5, dtype='uint8')
+        sc_coords = np.argwhere(spinalcord_bin>0)
 
         # Extract spinalcord slice center of mass
         centerline_coords = np.nonzero(centerline)
@@ -1793,6 +1803,12 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
         RL_coords = np.argwhere(RL_mask)
         projections = np.dot(RL_coords, w)  # Project onto vector
         diameter_RL_spinalcord = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
+
+        # Compute symmetry score using the canal area
+        dot_product = np.dot(sc_coords - spinalcord_pos, w)
+        pos_coords = np.argwhere(dot_product > 0)
+        neg_coords = np.argwhere(dot_product < 0)
+        asymmetry_spinalcord_R_L = len(neg_coords) / (len(pos_coords) + 1e-8)
 
         # Compute area 
         area_spinalcord = np.sum(spinalcord_bin) * dim[0] * dim[1]
@@ -1828,6 +1844,8 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
         'eccentricity_spinalcord': eccentricity_spinalcord,
         'solidity_canal': solidity_canal,  # convexity measure
         'solidity_spinalcord': solidity_spinalcord,  # convexity measure
+        'asymmetry_canal_R_L': asymmetry_canal_R_L,
+        'asymmetry_spinalcord_R_L': asymmetry_spinalcord_R_L
     }
     return properties
 
