@@ -808,70 +808,136 @@ def measure_canal(seg_canal, centerline, spine_centerline):
         'canal_centroid',
         'eccentricity_canal',
         'eccentricity_spinalcord',
-        'orientation',
         'solidity_canal',
-        'solidity_spinalcord',
-        'angle_AP',
-        'angle_RL',
-        'length'
+        'solidity_spinalcord'
     ]
+    # Extract canal coords
+    canal_coords = np.argwhere(seg_canal.data > 0)
+    sc_coords = np.argwhere(seg_canal.data == 1)
 
     # Fetch dimensions from image.
     nx, ny, nz, nt, px, py, pz, pt = seg_canal.dim
 
     # Extract min and max index in Z direction
     deriv = {int(z_ref): centerline["derivative"][:2, index] for index, z_ref in enumerate(centerline["position"][2])}
-    pos_spine = {int(z_ref): np.round(spine_centerline["position"][:2, index]).astype(int) for index, z_ref in enumerate(spine_centerline["position"][2])}
+    pos = {int(z_ref): np.round(centerline["position"][:, index]).astype(int) for index, z_ref in enumerate(centerline["position"][2])}
+    pos_spine = {int(z_ref): np.round(spine_centerline["position"][:, index]).astype(int) for index, z_ref in enumerate(spine_centerline["position"][2])}
 
     min_z_index = max(min(deriv.keys()), min(pos_spine.keys()))
     max_z_index = min(max(deriv.keys()), max(pos_spine.keys()))
     # Loop across the S-I slices
     shape_properties = {key: {} for key in property_list}
     for iz in range(min_z_index, max_z_index + 1):
-        patch_canal = (seg_canal.data[:, :, iz] > 0).astype(int)
-        patch_sc = (seg_canal.data[:, :, iz] == 1).astype(int)
-        # Extract tangent vector to the centerline (i.e. its derivative)
         tangent_vect = np.array([deriv[iz][0] * px, deriv[iz][1] * py, pz])
-        # Compute the angle about AP axis between the centerline and the normal vector to the slice
-        angle_AP_rad = math.atan2(tangent_vect[0], tangent_vect[2])
-        # Compute the angle about RL axis between the centerline and the normal vector to the slice
-        angle_RL_rad = math.atan2(tangent_vect[1], tangent_vect[2])
-        # Apply affine transformation to account for the angle between the centerline and the normal to the patch
-        tform = transform.AffineTransform(scale=(np.cos(angle_RL_rad), np.cos(angle_AP_rad)))
-        # Convert to float64, to avoid problems in image indexation causing issues when applying transform.warp
-        patch_canal = patch_canal.astype(np.float64)
-        patch_sc = patch_sc.astype(np.float64)
-        # Create a circle centered on the spine centerline
-        patch_centerline = np.zeros_like(patch_canal)
-        rr, cc = draw.disk((pos_spine[iz][0], pos_spine[iz][1]), radius=8, shape=patch_canal.shape)
-        patch_centerline[rr, cc] = 1.0
+        # patch_canal = (seg_canal.data[:, :, iz] > 0).astype(int)
+        # patch_sc = (seg_canal.data[:, :, iz] == 1).astype(int)
+        # # Extract tangent vector to the centerline (i.e. its derivative)
+        # # Compute the angle about AP axis between the centerline and the normal vector to the slice
+        # angle_AP_rad = math.atan2(tangent_vect[0], tangent_vect[2])
+        # # Compute the angle about RL axis between the centerline and the normal vector to the slice
+        # angle_RL_rad = math.atan2(tangent_vect[1], tangent_vect[2])
+        # # Apply affine transformation to account for the angle between the centerline and the normal to the patch
+        # tform = transform.AffineTransform(scale=(np.cos(angle_RL_rad), np.cos(angle_AP_rad)))
+        # # Convert to float64, to avoid problems in image indexation causing issues when applying transform.warp
+        # patch_canal = patch_canal.astype(np.float64)
+        # patch_sc = patch_sc.astype(np.float64)
+        # # Create a circle centered on the spine centerline
+        # patch_centerline = np.zeros_like(patch_canal)
+        # rr, cc = draw.disk((pos_spine[iz][0], pos_spine[iz][1]), radius=8, shape=patch_canal.shape)
+        # patch_centerline[rr, cc] = 1.0
 
-        patch_canal_scaled = transform.warp(
-            patch_canal,
-            tform.inverse,
-            output_shape=patch_canal.shape,
-            order=1,
-        )
-        patch_centerline_scaled = transform.warp(
-            patch_centerline,
-            tform.inverse,
-            output_shape=patch_centerline.shape,
-            order=1,
-        )
-        patch_sc_scaled = transform.warp(
-            patch_sc,
-            tform.inverse,
-            output_shape=patch_sc.shape,
-            order=1,
-        )
+        # patch_canal_scaled = transform.warp(
+        #     patch_canal,
+        #     tform.inverse,
+        #     output_shape=patch_canal.shape,
+        #     order=1,
+        # )
+        # patch_centerline_scaled = transform.warp(
+        #     patch_centerline,
+        #     tform.inverse,
+        #     output_shape=patch_centerline.shape,
+        #     order=1,
+        # )
+        # patch_sc_scaled = transform.warp(
+        #     patch_sc,
+        #     tform.inverse,
+        #     output_shape=patch_sc.shape,
+        #     order=1,
+        # )
+
+        # Test without angle correction
+        v = tangent_vect/(np.linalg.norm(tangent_vect) + 1e-8)
+        tmp = np.array([1, 0, 0]) # Init temporary non colinear vector
+        u1 = np.cross(v, tmp)
+        u1 /= np.linalg.norm(u1)
+        u2 = np.cross(v, u1)
+        u2 /= np.linalg.norm(u2)
+
+        pos_coord = pos[iz]
+
+        # Find plane coordiantes for all the structures
+        x_coords_canal = np.dot(canal_coords - pos_coord, u1)
+        y_coords_canal = np.dot(canal_coords - pos_coord, u2)
+        z_coords_canal = np.dot(canal_coords - pos_coord, v)
+
+        x_coords_sc = np.dot(sc_coords - pos_coord, u1)
+        y_coords_sc = np.dot(sc_coords - pos_coord, u2)
+        z_coords_sc = np.dot(sc_coords - pos_coord, v)
+
+        x_coords_spine = np.dot(spine_centerline["position"].T - pos_coord, u1)
+        y_coords_spine = np.dot(spine_centerline["position"].T - pos_coord, u2)
+        z_coords_spine = np.dot(spine_centerline["position"].T - pos_coord, v)
+
+        mask_slice_canal = abs(z_coords_canal) < 1
+        x_coords_slice_canal = x_coords_canal[mask_slice_canal]
+        y_coords_slice_canal = y_coords_canal[mask_slice_canal]
+
+        mask_slice_sc = abs(z_coords_sc) < 1
+        x_coords_slice_sc = x_coords_sc[mask_slice_sc]
+        y_coords_slice_sc = y_coords_sc[mask_slice_sc]
+
+        mask_slice_spine = abs(z_coords_spine) < 1
+        x_coords_slice_spine = x_coords_spine[mask_slice_spine]
+        y_coords_slice_spine = y_coords_spine[mask_slice_spine]
+
+        # Center coordinates
+        min_x = np.min(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine]))
+        min_y = np.min(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine]))
+        x_coords_slice_canal = np.round(x_coords_slice_canal - min_x).astype(int)
+        y_coords_slice_canal = np.round(y_coords_slice_canal - min_y).astype(int)
+        if any(x_coords_slice_sc) and any(y_coords_slice_sc):
+            x_coords_slice_sc = np.round(x_coords_slice_sc - min_x).astype(int)
+            y_coords_slice_sc = np.round(y_coords_slice_sc - min_y).astype(int)
+        x_coords_slice_spine = np.round(x_coords_slice_spine - min_x).astype(int)
+        y_coords_slice_spine = np.round(y_coords_slice_spine - min_y).astype(int)
+        max_x = np.round(np.max(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine]))).astype(int)
+        max_y = np.round(np.max(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine]))).astype(int)
+
+        # Create patches
+        canal_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
+        canal_slice[x_coords_slice_canal, y_coords_slice_canal] = 1
+        
+        sc_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
+        if any(x_coords_slice_sc) and any(y_coords_slice_sc):
+            sc_slice[x_coords_slice_sc, y_coords_slice_sc] = 1
+        
+        spine_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
+        spine_slice[x_coords_slice_spine, y_coords_slice_spine] = 1
+        
+        # Pad patches to avoid edge effect when calculating shape properties
+        canal_slice = np.pad(canal_slice, pad_width=(5, 5), mode='constant', constant_values=0)
+        sc_slice = np.pad(sc_slice, pad_width=(5, 5), mode='constant', constant_values=0)
+        spine_slice = np.pad(spine_slice, pad_width=(5, 5), mode='constant', constant_values=0)
+
+        # Remove small objects from canal slice to avoid issues in shape properties calculation
+        canal_slice = (~morphology.remove_small_objects(~canal_slice.astype(bool), min_size=2)).astype(int)
+        sc_slice = (~morphology.remove_small_objects(~sc_slice.astype(bool), min_size=2)).astype(int)
+
         # Calculate shape metrics
-        shape_property = _properties2d(patch_canal_scaled, patch_sc_scaled, patch_centerline_scaled, [px, py])
+        # shape_property = _properties2d(patch_canal_scaled, patch_sc_scaled, patch_centerline_scaled, [px, py])
+        shape_property = _properties2d(canal_slice, sc_slice, spine_slice, [px, py])
 
         if shape_property is not None:
-            # Add custom fields
-            shape_property['angle_AP'] = angle_AP_rad * 180.0 / math.pi
-            shape_property['angle_RL'] = angle_RL_rad * 180.0 / math.pi
-            shape_property['length'] = pz / (np.cos(angle_AP_rad) * np.cos(angle_RL_rad))
             # Loop across properties and assign values for function output
             for property_name in property_list:
                 shape_properties[property_name][iz] = shape_property[property_name]
