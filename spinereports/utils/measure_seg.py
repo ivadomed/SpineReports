@@ -1730,14 +1730,14 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
     w = np.array([-v[1], v[0]])
 
     # Compute AP diameter along v 
-    v_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=v, radius=4) # Create cylindrical mask along v
+    v_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=v, radius=2) # Create cylindrical mask along v
     AP_mask = v_mask*canal_bin
     AP_coords = np.argwhere(AP_mask)
     projections = np.dot(AP_coords, v)  # Project onto vector
     diameter_AP_canal = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
 
     # Compute RL diameter along w
-    w_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=w, radius=4) # Create cylindrical mask along w
+    w_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=w, radius=2) # Create cylindrical mask along w
     RL_mask = w_mask*canal_bin
     RL_coords = np.argwhere(RL_mask)
     projections = np.dot(RL_coords, w)  # Project onto vector
@@ -1771,14 +1771,14 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
         spinalcord_pos = np.array([np.round(np.mean(spinalcord_coords[0])), np.round(np.mean(spinalcord_coords[1]))])
 
         # Compute AP diameter along v
-        v_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=v, radius=4) # Create cylindrical mask along v
+        v_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=v, radius=2) # Create cylindrical mask along v
         AP_mask = v_mask*spinalcord_bin
         AP_coords = np.argwhere(AP_mask)
         projections = np.dot(AP_coords, v)  # Project onto vector
         diameter_AP_spinalcord = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
 
         # Compute RL diameter along w
-        w_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=w, radius=4) # Create cylindrical mask along w
+        w_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=w, radius=2) # Create cylindrical mask along w
         RL_mask = w_mask*spinalcord_bin
         RL_coords = np.argwhere(RL_mask)
         projections = np.dot(RL_coords, w)  # Project onto vector
