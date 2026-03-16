@@ -1747,14 +1747,10 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
     area_canal = np.sum(canal_bin) * dim[0] * dim[1]
 
     # Compute eccentricity
-    max_diameter_canal = max(diameter_AP_canal, diameter_RL_canal)
-    min_diameter_canal = min(diameter_AP_canal, diameter_RL_canal)
-    eccentricity_canal = np.sqrt(1 - min_diameter_canal**2/max_diameter_canal**2) if max_diameter_canal > 0 else 0
-
-    # Compute angle between AP and patient AP
-    u2 = np.array([0, 1])
-    angle = angle_between(u2, v) # rad
-    angle = 360*angle/(2*np.pi)
+    if diameter_AP_canal < diameter_RL_canal:
+        eccentricity_canal = np.sqrt(1 - diameter_AP_canal**2/diameter_RL_canal**2) if diameter_RL_canal > 0 else 0
+    else:
+        eccentricity_canal = -np.sqrt(1 - diameter_RL_canal**2/diameter_AP_canal**2) if diameter_AP_canal > 0 else 0
 
     # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
     if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
@@ -1792,9 +1788,10 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
         area_spinalcord = np.sum(spinalcord_bin) * dim[0] * dim[1]
 
         # Compute eccentricity 
-        max_diameter_spinalcord = max(diameter_AP_spinalcord, diameter_RL_spinalcord)
-        min_diameter_spinalcord = min(diameter_AP_spinalcord, diameter_RL_spinalcord)
-        eccentricity_spinalcord = np.sqrt(1 - min_diameter_spinalcord**2/max_diameter_spinalcord**2) if max_diameter_spinalcord > 0 else 0
+        if diameter_AP_spinalcord < diameter_RL_spinalcord:
+            eccentricity_spinalcord = np.sqrt(1 - diameter_AP_spinalcord**2/diameter_RL_spinalcord**2) if diameter_RL_spinalcord > 0 else 0
+        else:
+            eccentricity_spinalcord = -np.sqrt(1 - diameter_RL_spinalcord**2/diameter_AP_spinalcord**2) if diameter_AP_spinalcord > 0 else 0
 
         # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
         if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
@@ -1819,7 +1816,6 @@ def _properties2d(canal, spinalcord, spine_centerline, dim):
         'canal_centroid': canal_pos,
         'eccentricity_canal': eccentricity_canal,
         'eccentricity_spinalcord': eccentricity_spinalcord,
-        'orientation': angle,
         'solidity_canal': solidity_canal,  # convexity measure
         'solidity_spinalcord': solidity_spinalcord,  # convexity measure
     }
