@@ -1,5 +1,6 @@
 import numpy as np
-
+import platform
+from skimage import measure
 
 def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_deg=2.0, refine_step_deg=0.2):
     """
@@ -92,3 +93,213 @@ def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_
     best_angle = float(np.mod(best_angle, np.pi))
     vector_2d = np.array([np.cos(best_angle), np.sin(best_angle)], dtype=np.float64)
     return best_angle, vector_2d, best_sum
+
+def straighten_coordinates(centerline, spine_centerline, radius):
+    coordinates = np.zeros((3, 2*radius+1, 2*radius+1, len(centerline['position'].T)), dtype=float)
+    for i, (origin, normal) in enumerate(zip(centerline['position'].T, centerline['derivative'].T)):
+        superior = normal / np.linalg.norm(normal)  # in the S direction
+
+        # Find anterior vector using spine centerline
+        anterior_point = intersect_centerline_plane(spine_centerline, origin, superior)
+        if anterior_point is None:
+            continue
+
+        anterior = anterior_point - origin
+        anterior = anterior / np.linalg.norm(anterior)  # in the A direction
+        left = np.cross(superior, anterior)  # in the L direction
+
+        steps = np.linspace(start=-radius, stop=+radius, num=2*radius+1)
+        coordinates[:, :, :, i] = origin[:, None, None]
+        coordinates[:, :, :, i] += steps[None, :, None] * left[:, None, None]
+        coordinates[:, :, :, i] += steps[None, None, :] * anterior[:, None, None]
+    return coordinates
+
+def intersect_centerline_plane(centerline, point, normal):
+    for i in range(len(centerline['position'].T)-1):
+        coord_i = centerline['position'].T[i]
+        coord_i1 = centerline['position'].T[i+1]
+        if np.dot(coord_i - point, normal) * np.dot(coord_i1 - point, normal) <= 0:
+            break
+        elif i == len(centerline['position'].T)-2:
+            return None
+    while np.dot(coord_i - coord_i1, normal) > 1e-3:
+        mid = (coord_i + coord_i1) / 2
+        if np.dot(mid - point, normal) * np.dot(coord_i - point, normal) <= 0:
+            coord_i1 = mid
+        else:
+            coord_i = mid
+    intersec_point = (coord_i + coord_i1) / 2
+    return intersec_point
+
+def _properties2d(canal, spinalcord, dim, radius=2):
+    """
+    Compute shape property of the input 2D image. Accounts for partial volume information.
+    :param canal: 2D input canal image in uint8 or float (weighted for partial volume) that has a single object.
+    :param spinalcord: 2D input spinal cord image in uint8 or float (weighted for partial volume).
+    :param dim: [px, py]: Physical dimension of the image (in mm). X,Y respectively correspond to AP,RL.
+    :param radius: Radius of the cylindrical mask used for diameter computation.
+    :return:
+    """
+    # Check if slice is empty
+    if np.sum(canal) == 0:
+        print('The slice is empty.')
+        return None
+
+    # Extract canal slice center of mass
+    x_pos = canal.shape[0]//2
+    y_pos = canal.shape[1]//2
+    canal_pos = np.array([x_pos, y_pos])
+    
+    # Create vector v from canal_pos to spine pos and normalize it
+    v = np.array([0, 1])
+    v = v / np.linalg.norm(v)
+
+    # Create w an orthogonal vector to v
+    w = np.array([1, 0])
+
+    # Compute AP diameter along v 
+    v_mask = cylindrical_mask(shape=canal.shape, p0=canal_pos, v=v, radius=radius) # Create cylindrical mask along v
+    AP_mask = v_mask*canal
+    AP_coords = np.argwhere(AP_mask)
+    projections = np.dot(AP_coords, v)  # Project onto vector
+    if projections.any():
+        diameter_AP_canal = np.mean([np.max(AP_coords[AP_coords[:,0]==row][:,1]) - np.min(AP_coords[AP_coords[:,0]==row][:,1]) for row in np.unique(AP_coords[:, 0])])*dim[0] # AP length = max - min projection
+    else:
+        diameter_AP_canal = 0
+    
+    # Compute RL diameter along w
+    w_mask = cylindrical_mask(shape=canal.shape, p0=canal_pos, v=w, radius=radius) # Create cylindrical mask along w
+    RL_mask = w_mask*canal
+    RL_coords = np.argwhere(RL_mask)
+    projections = np.dot(RL_coords, w)  # Project onto vector
+    if projections.any():
+        diameter_RL_canal = np.mean([np.max(RL_coords[RL_coords[:,1]==col][:,0]) - np.min(RL_coords[RL_coords[:,1]==col][:,0]) for col in np.unique(RL_coords[:, 1])])*dim[1] # RL length = max - min projection
+    else:
+        diameter_RL_canal = 0
+
+    # Compute symmetry score
+    asymmetry_canal_R_L = 1 - (2 * np.sum(np.abs(canal - np.flip(canal, axis=0))) / (np.sum(np.abs(canal + np.flip(canal, axis=0))) + 1e-8))
+
+    # Compute area
+    area_canal = np.sum(canal) * dim[0] * dim[1]
+
+    # Compute eccentricity
+    if diameter_AP_canal < diameter_RL_canal:
+        eccentricity_canal = np.sqrt(1 - diameter_AP_canal**2/diameter_RL_canal**2) if diameter_RL_canal > 0 else 0
+    else:
+        eccentricity_canal = -np.sqrt(1 - diameter_RL_canal**2/diameter_AP_canal**2) if diameter_AP_canal > 0 else 0
+
+    # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
+    if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
+        solidity_canal = -1
+    else:
+        solidity_canal = compute_solidity_2d(canal)
+
+    # Compute spinal cord metrics if not empty else set metrics to -1
+    if not np.sum(spinalcord) == 0:
+        # Extract spinalcord slice center of mass
+        spinalcord_pos = canal_pos.copy()
+
+        # Compute AP diameter along v
+        v_mask = cylindrical_mask(shape=spinalcord.shape, p0=spinalcord_pos, v=v, radius=radius) # Create cylindrical mask along v
+        AP_mask = v_mask*spinalcord
+        AP_coords = np.argwhere(AP_mask)
+        projections = np.dot(AP_coords, v)  # Project onto vector
+        if projections.any():
+            diameter_AP_spinalcord = np.mean([np.max(AP_coords[AP_coords[:,0]==row][:,1]) - np.min(AP_coords[AP_coords[:,0]==row][:,1]) for row in np.unique(AP_coords[:, 0])])*dim[0] # AP length = max - min projection
+        else:
+            diameter_AP_spinalcord = 0
+
+        # Compute RL diameter along w
+        w_mask = cylindrical_mask(shape=spinalcord.shape, p0=spinalcord_pos, v=w, radius=radius) # Create cylindrical mask along w
+        RL_mask = w_mask*spinalcord
+        RL_coords = np.argwhere(RL_mask)
+        projections = np.dot(RL_coords, w)  # Project onto vector
+        if projections.any():
+            diameter_RL_spinalcord = np.mean([np.max(RL_coords[RL_coords[:,1]==col][:,0]) - np.min(RL_coords[RL_coords[:,1]==col][:,0]) for col in np.unique(RL_coords[:, 1])])*dim[1] # RL length = max - min projection
+        else:
+            diameter_RL_spinalcord = 0
+
+        # Compute symmetry score
+        asymmetry_spinalcord_R_L = 1 - (2 * np.sum(np.abs(spinalcord - np.flip(spinalcord, axis=0))) / (np.sum(np.abs(spinalcord + np.flip(spinalcord, axis=0))) + 1e-8))
+
+        # Compute area 
+        area_spinalcord = np.sum(spinalcord) * dim[0] * dim[1]
+
+        # Compute eccentricity 
+        if diameter_AP_spinalcord < diameter_RL_spinalcord:
+            eccentricity_spinalcord = np.sqrt(1 - diameter_AP_spinalcord**2/diameter_RL_spinalcord**2) if diameter_RL_spinalcord > 0 else 0
+        else:
+            eccentricity_spinalcord = -np.sqrt(1 - diameter_RL_spinalcord**2/diameter_AP_spinalcord**2) if diameter_AP_spinalcord > 0 else 0
+
+        # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
+        if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
+            solidity_spinalcord = -1
+        else:
+            solidity_spinalcord = compute_solidity_2d(spinalcord)
+    else:
+        area_spinalcord = -1
+        diameter_AP_spinalcord = -1
+        diameter_RL_spinalcord = -1
+        eccentricity_spinalcord = -1
+        solidity_spinalcord = -1
+        asymmetry_spinalcord_R_L = -1
+
+    # Fill up dictionary
+    properties = {
+        'area_canal': area_canal,
+        'area_spinalcord': area_spinalcord,
+        'diameter_AP_canal': diameter_AP_canal,
+        'diameter_AP_spinalcord': diameter_AP_spinalcord,
+        'diameter_RL_canal': diameter_RL_canal,
+        'diameter_RL_spinalcord': diameter_RL_spinalcord,
+        'canal_centroid': canal_pos,
+        'eccentricity_canal': eccentricity_canal,
+        'eccentricity_spinalcord': eccentricity_spinalcord,
+        'solidity_canal': solidity_canal,  # convexity measure
+        'solidity_spinalcord': solidity_spinalcord,  # convexity measure
+        'asymmetry_canal_R_L': asymmetry_canal_R_L,
+        'asymmetry_spinalcord_R_L': asymmetry_spinalcord_R_L
+    }
+    return properties
+
+def cylindrical_mask(shape, p0, v, radius):
+    """
+    Create a 2D binary mask of a 'cylinder' (thick line) along vector `v` passing through `p0`.
+    
+    Args:
+        shape (tuple): Shape of the 2D image (height, width)
+        p0 (np.array): A point [y, x] the vector passes through
+        v (np.array): Direction vector [vy, vx]
+        radius (float): Cylinder radius (in pixels)
+
+    Returns:
+        mask (2D np.array): Binary mask with True inside the cylinder
+    """
+    h, w = shape
+    Y, X = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+    
+    # Shift grid by point
+    dy = Y - p0[0]
+    dx = X - p0[1]
+    
+    # Normalize direction vector
+    v = v / np.linalg.norm(v)
+    
+    # Compute perpendicular distance to the line (vector projection method)
+    # Distance = ||(point - p0) - ((point - p0) · v) * v||
+    dot = dx * v[1] + dy * v[0]
+    proj_x = dot * v[1]
+    proj_y = dot * v[0]
+    perp_x = dx - proj_x
+    perp_y = dy - proj_y
+    dist = np.sqrt(perp_x**2 + perp_y**2)
+    
+    # Inside mask if distance < radius
+    mask = dist < radius
+    return mask
+
+def compute_solidity_2d(mask):
+    labeled = measure.label(mask)
+    props = measure.regionprops(labeled)[0]
+    return props.solidity

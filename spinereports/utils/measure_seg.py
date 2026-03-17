@@ -18,12 +18,13 @@ from sklearn.mixture import GaussianMixture
 import colorsys
 
 from spinereports.utils.image import Image, resample_nib, zeros_like
-from spinereports.utils.utils import find_symmetry_vector_binary
+from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d
 from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
 import SimpleITK as sitk
 from scipy.spatial import ConvexHull
+from scipy import ndimage
 
 warnings.filterwarnings("ignore")
 
@@ -813,140 +814,24 @@ def measure_canal(seg_canal, centerline, spine_centerline):
         'asymmetry_canal_R_L',
         'asymmetry_spinalcord_R_L'
     ]
-    # Extract canal coords
-    canal_coords = np.argwhere(seg_canal.data > 0)
-    sc_coords = np.argwhere(seg_canal.data == 1)
-
     # Fetch dimensions from image.
     nx, ny, nz, nt, px, py, pz, pt = seg_canal.dim
 
-    # Extract min and max index in Z direction
-    deriv = {int(z_ref): centerline["derivative"][:2, index] for index, z_ref in enumerate(centerline["position"][2])}
-    pos = {int(z_ref): np.round(centerline["position"][:, index]).astype(int) for index, z_ref in enumerate(centerline["position"][2])}
-    pos_spine = {int(z_ref): np.round(spine_centerline["position"][:, index]).astype(int) for index, z_ref in enumerate(spine_centerline["position"][2])}
+    # Straighten canal and spinalcord to extract metrics
+    radius = 30 # mm, radius of the straightened patch to extract around the centerline
+    canal_seg = (seg_canal.data > 0).astype(int)
+    sc_seg = (seg_canal.data == 1).astype(int)
+    straightened_coordinates = straighten_coordinates(centerline, spine_centerline, radius=radius)
+    straightened_canal = ndimage.map_coordinates(canal_seg, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_spinalcord = ndimage.map_coordinates(sc_seg, straightened_coordinates, order=1, mode='grid-constant')    
 
-    min_z_index = max(min(deriv.keys()), min(pos_spine.keys()))
-    max_z_index = min(max(deriv.keys()), max(pos_spine.keys()))
     # Loop across the S-I slices
+    min_z_index = np.argwhere(straightened_canal>0)[:,2].min()
+    max_z_index = np.argwhere(straightened_canal>0)[:,2].max()
     shape_properties = {key: {} for key in property_list}
     for iz in range(min_z_index, max_z_index + 1):
-        tangent_vect = np.array([deriv[iz][0] * px, deriv[iz][1] * py, pz])
-        # patch_canal = (seg_canal.data[:, :, iz] > 0).astype(int)
-        # patch_sc = (seg_canal.data[:, :, iz] == 1).astype(int)
-        # # Extract tangent vector to the centerline (i.e. its derivative)
-        # # Compute the angle about AP axis between the centerline and the normal vector to the slice
-        # angle_AP_rad = math.atan2(tangent_vect[0], tangent_vect[2])
-        # # Compute the angle about RL axis between the centerline and the normal vector to the slice
-        # angle_RL_rad = math.atan2(tangent_vect[1], tangent_vect[2])
-        # # Apply affine transformation to account for the angle between the centerline and the normal to the patch
-        # tform = transform.AffineTransform(scale=(np.cos(angle_RL_rad), np.cos(angle_AP_rad)))
-        # # Convert to float64, to avoid problems in image indexation causing issues when applying transform.warp
-        # patch_canal = patch_canal.astype(np.float64)
-        # patch_sc = patch_sc.astype(np.float64)
-        # # Create a circle centered on the spine centerline
-        # patch_centerline = np.zeros_like(patch_canal)
-        # rr, cc = draw.disk((pos_spine[iz][0], pos_spine[iz][1]), radius=8, shape=patch_canal.shape)
-        # patch_centerline[rr, cc] = 1.0
-
-        # patch_canal_scaled = transform.warp(
-        #     patch_canal,
-        #     tform.inverse,
-        #     output_shape=patch_canal.shape,
-        #     order=1,
-        # )
-        # patch_centerline_scaled = transform.warp(
-        #     patch_centerline,
-        #     tform.inverse,
-        #     output_shape=patch_centerline.shape,
-        #     order=1,
-        # )
-        # patch_sc_scaled = transform.warp(
-        #     patch_sc,
-        #     tform.inverse,
-        #     output_shape=patch_sc.shape,
-        #     order=1,
-        # )
-
-        # Test without angle correction
-        v = tangent_vect/(np.linalg.norm(tangent_vect) + 1e-8)
-        tmp = np.array([1, 0, 0]) # Init temporary non colinear vector
-        u1 = np.cross(v, tmp)
-        u1 /= np.linalg.norm(u1)
-        u2 = np.cross(v, u1)
-        u2 /= np.linalg.norm(u2)
-
-        pos_coord = pos[iz]
-
-        # Find plane coordiantes for all the structures
-        x_coords_canal = np.dot(canal_coords - pos_coord, u1)
-        y_coords_canal = np.dot(canal_coords - pos_coord, u2)
-        z_coords_canal = np.dot(canal_coords - pos_coord, v)
-
-        x_coords_sc = np.dot(sc_coords - pos_coord, u1)
-        y_coords_sc = np.dot(sc_coords - pos_coord, u2)
-        z_coords_sc = np.dot(sc_coords - pos_coord, v)
-
-        x_coords_spine = np.dot(spine_centerline["position"].T - pos_coord, u1)
-        y_coords_spine = np.dot(spine_centerline["position"].T - pos_coord, u2)
-        z_coords_spine = np.dot(spine_centerline["position"].T - pos_coord, v)
-
-        mask_slice_canal = abs(z_coords_canal) < 1
-        x_coords_slice_canal = x_coords_canal[mask_slice_canal]
-        y_coords_slice_canal = y_coords_canal[mask_slice_canal]
-
-        mask_slice_sc = abs(z_coords_sc) < 1
-        x_coords_slice_sc = x_coords_sc[mask_slice_sc]
-        y_coords_slice_sc = y_coords_sc[mask_slice_sc]
-
-        mask_slice_spine = abs(z_coords_spine) < 1
-        x_coords_slice_spine = x_coords_spine[mask_slice_spine]
-        y_coords_slice_spine = y_coords_spine[mask_slice_spine]
-
-        x_coords_slice_centerline_canal = np.array([0])
-        y_coords_slice_centerline_canal = np.array([0])
-
-        # Center coordinates
-        min_x = np.min(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine, x_coords_slice_centerline_canal]))
-        min_y = np.min(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine, y_coords_slice_centerline_canal]))
-        x_coords_slice_canal = np.round(x_coords_slice_canal - min_x).astype(int)
-        y_coords_slice_canal = np.round(y_coords_slice_canal - min_y).astype(int)
-        if any(x_coords_slice_sc) and any(y_coords_slice_sc):
-            x_coords_slice_sc = np.round(x_coords_slice_sc - min_x).astype(int)
-            y_coords_slice_sc = np.round(y_coords_slice_sc - min_y).astype(int)
-        x_coords_slice_spine = np.round(x_coords_slice_spine - min_x).astype(int)
-        y_coords_slice_spine = np.round(y_coords_slice_spine - min_y).astype(int)
-        x_coords_slice_centerline_canal = np.round(x_coords_slice_centerline_canal - min_x).astype(int)
-        y_coords_slice_centerline_canal = np.round(y_coords_slice_centerline_canal - min_y).astype(int)
-        max_x = np.round(np.max(np.concatenate([x_coords_slice_canal, x_coords_slice_sc, x_coords_slice_spine, x_coords_slice_centerline_canal]))).astype(int)
-        max_y = np.round(np.max(np.concatenate([y_coords_slice_canal, y_coords_slice_sc, y_coords_slice_spine, y_coords_slice_centerline_canal]))).astype(int)
-
-        # Create patches
-        canal_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
-        canal_slice[x_coords_slice_canal, y_coords_slice_canal] = 1
-        
-        sc_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
-        if any(x_coords_slice_sc) and any(y_coords_slice_sc):
-            sc_slice[x_coords_slice_sc, y_coords_slice_sc] = 1
-        
-        spine_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
-        spine_slice[x_coords_slice_spine, y_coords_slice_spine] = 1
-
-        centerline_slice = np.zeros((max_x+1, max_y+1), dtype=np.uint8)
-        centerline_slice[x_coords_slice_centerline_canal, y_coords_slice_centerline_canal] = 1
-        
-        # Pad patches to avoid edge effect when calculating shape properties
-        canal_slice = np.pad(canal_slice, pad_width=(5, 5), mode='constant', constant_values=0)
-        sc_slice = np.pad(sc_slice, pad_width=(5, 5), mode='constant', constant_values=0)
-        spine_slice = np.pad(spine_slice, pad_width=(5, 5), mode='constant', constant_values=0)
-        centerline_slice = np.pad(centerline_slice, pad_width=(5, 5), mode='constant', constant_values=0)
-
-        # Remove small objects from canal slice to avoid issues in shape properties calculation
-        canal_slice = (~morphology.remove_small_objects(~canal_slice.astype(bool), min_size=2)).astype(int)
-        sc_slice = (~morphology.remove_small_objects(~sc_slice.astype(bool), min_size=2)).astype(int)
-
         # Calculate shape metrics
-        # shape_property = _properties2d(patch_canal_scaled, patch_sc_scaled, patch_centerline_scaled, [px, py])
-        shape_property = _properties2d(canal_slice, sc_slice, centerline_slice, spine_slice, [px, py])
+        shape_property = _properties2d(straightened_canal[:, :, iz], straightened_spinalcord[:, :, iz], [px, py])
 
         if shape_property is not None:
             # Loop across properties and assign values for function output
@@ -1704,215 +1589,6 @@ def bspline(x, y, xref, smooth, deg_bspline=3, pz=1):
     y_fit = interpolate.splev(xref, tck, der=0)
     y_fit_der = interpolate.splev(xref, tck, der=1)
     return y_fit, y_fit_der
-
-def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
-    """
-    Compute shape property of the input 2D image. Accounts for partial volume information.
-    :param canal: 2D input canal image in uint8 or float (weighted for partial volume) that has a single object.
-    :param spinalcord: 2D input spinal cord image in uint8 or float (weighted for partial volume).
-    :param centerline: 2D input canal centerline image in uint8 or float (weighted for partial volume).
-    :param spine_centerline: 2D input spine centerline image in uint8 or float (weighted for partial volume).
-    :param dim: [px, py]: Physical dimension of the image (in mm). X,Y respectively correspond to AP,RL.
-    :return:
-    """
-    # Check if slice is empty
-    if np.all(canal < 1e-6):
-        print('The slice is empty.')
-        return None
-    
-    # Normalize between 0 and 1 (also check if slice is empty)
-    canal_norm = (canal - canal.min()) / (canal.max() - canal.min())
-
-    # Fetch spine position
-    spine_pos = np.nonzero(spine_centerline)
-    spine_pos = np.array([np.round(np.mean(spine_pos[0])), np.round(np.mean(spine_pos[1]))])
-
-    # Binarize canal using threshold at 0.5
-    canal_bin = np.array(canal_norm > 0.5, dtype='uint8')
-    coords = np.argwhere(canal_bin>0)
-
-    # Extract canal slice center of mass
-    centerline_coords = np.nonzero(centerline)
-    canal_pos = np.array([np.round(np.mean(centerline_coords[0])), np.round(np.mean(centerline_coords[1]))])
-
-    # Create vector v from canal_pos to spine pos and normalize it
-    v = spine_pos - canal_pos
-    v = v / np.linalg.norm(v)
-
-    # Create w an orthogonal vector to v
-    w = np.array([-v[1], v[0]])
-
-    # Compute AP diameter along v 
-    v_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=v, radius=2) # Create cylindrical mask along v
-    AP_mask = v_mask*canal_bin
-    AP_coords = np.argwhere(AP_mask)
-    projections = np.dot(AP_coords, v)  # Project onto vector
-    if projections:
-        diameter_AP_canal = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
-    else:
-        diameter_AP_canal = 0
-    
-    # Compute RL diameter along w
-    w_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=w, radius=2) # Create cylindrical mask along w
-    RL_mask = w_mask*canal_bin
-    RL_coords = np.argwhere(RL_mask)
-    projections = np.dot(RL_coords, w)  # Project onto vector
-    if projections:
-        diameter_RL_canal = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
-    else:
-        diameter_RL_canal = 0
-
-    # Compute symmetry score using the canal area
-    dot_product = np.dot(coords - canal_pos, w)
-    pos_coords = np.argwhere(dot_product > 0)
-    neg_coords = np.argwhere(dot_product < 0)
-    asymmetry_canal_R_L = len(neg_coords) / (len(pos_coords) + 1e-8)
-
-    # Compute area
-    area_canal = np.sum(canal_bin) * dim[0] * dim[1]
-
-    # Compute eccentricity
-    if diameter_AP_canal < diameter_RL_canal:
-        eccentricity_canal = np.sqrt(1 - diameter_AP_canal**2/diameter_RL_canal**2) if diameter_RL_canal > 0 else 0
-    else:
-        eccentricity_canal = -np.sqrt(1 - diameter_RL_canal**2/diameter_AP_canal**2) if diameter_AP_canal > 0 else 0
-
-    # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
-    if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
-        solidity_canal = -1
-    else:
-        solidity_canal = compute_solidity_2d(canal_bin)
-
-    # Compute spinal cord metrics if not empty else set metrics to -1
-    if not np.all(spinalcord < 1e-6):
-        # Normalize between 0 and 1 (also check if slice is empty)
-        spinalcord_norm = (spinalcord - spinalcord.min()) / (spinalcord.max() - spinalcord.min())
-
-        # Binarize canal using threshold at 0.5 Necessary input for measure.regionprops
-        spinalcord_bin = np.array(spinalcord_norm > 0.5, dtype='uint8')
-        sc_coords = np.argwhere(spinalcord_bin>0)
-
-        # Extract spinalcord slice center of mass
-        centerline_coords = np.nonzero(centerline)
-        spinalcord_pos = np.array([np.round(np.mean(centerline_coords[0])), np.round(np.mean(centerline_coords[1]))])
-
-        # Compute AP diameter along v
-        v_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=v, radius=2) # Create cylindrical mask along v
-        AP_mask = v_mask*spinalcord_bin
-        AP_coords = np.argwhere(AP_mask)
-        projections = np.dot(AP_coords, v)  # Project onto vector
-        if projections:
-            diameter_AP_spinalcord = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
-        else:
-            diameter_AP_spinalcord = 0
-
-        # Compute RL diameter along w
-        w_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=w, radius=2) # Create cylindrical mask along w
-        RL_mask = w_mask*spinalcord_bin
-        RL_coords = np.argwhere(RL_mask)
-        projections = np.dot(RL_coords, w)  # Project onto vector
-        if projections:
-            diameter_RL_spinalcord = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
-        else:
-            diameter_RL_spinalcord = 0
-
-        # Compute symmetry score using the canal area
-        dot_product = np.dot(sc_coords - spinalcord_pos, w)
-        pos_coords = np.argwhere(dot_product > 0)
-        neg_coords = np.argwhere(dot_product < 0)
-        asymmetry_spinalcord_R_L = len(neg_coords) / (len(pos_coords) + 1e-8)
-
-        # Compute area 
-        area_spinalcord = np.sum(spinalcord_bin) * dim[0] * dim[1]
-
-        # Compute eccentricity 
-        if diameter_AP_spinalcord < diameter_RL_spinalcord:
-            eccentricity_spinalcord = np.sqrt(1 - diameter_AP_spinalcord**2/diameter_RL_spinalcord**2) if diameter_RL_spinalcord > 0 else 0
-        else:
-            eccentricity_spinalcord = -np.sqrt(1 - diameter_RL_spinalcord**2/diameter_AP_spinalcord**2) if diameter_AP_spinalcord > 0 else 0
-
-        # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
-        if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
-            solidity_spinalcord = -1
-        else:
-            solidity_spinalcord = compute_solidity_2d(spinalcord_bin)
-    else:
-        area_spinalcord = -1
-        diameter_AP_spinalcord = -1
-        diameter_RL_spinalcord = -1
-        eccentricity_spinalcord = -1
-        solidity_spinalcord = -1
-        asymmetry_spinalcord_R_L = -1
-    
-    # Fill up dictionary
-    properties = {
-        'area_canal': area_canal,
-        'area_spinalcord': area_spinalcord,
-        'diameter_AP_canal': diameter_AP_canal,
-        'diameter_AP_spinalcord': diameter_AP_spinalcord,
-        'diameter_RL_canal': diameter_RL_canal,
-        'diameter_RL_spinalcord': diameter_RL_spinalcord,
-        'canal_centroid': canal_pos,
-        'eccentricity_canal': eccentricity_canal,
-        'eccentricity_spinalcord': eccentricity_spinalcord,
-        'solidity_canal': solidity_canal,  # convexity measure
-        'solidity_spinalcord': solidity_spinalcord,  # convexity measure
-        'asymmetry_canal_R_L': asymmetry_canal_R_L,
-        'asymmetry_spinalcord_R_L': asymmetry_spinalcord_R_L
-    }
-    return properties
-
-def angle_between(u, v):
-    u = np.array(u)
-    v = np.array(v)
-    dot_product = np.dot(u, v)
-    norm_u = np.linalg.norm(u)
-    norm_v = np.linalg.norm(v)
-    # Clip to avoid numerical issues (e.g. arccos(1.0000001))
-    cos_theta = np.clip(dot_product / (norm_u * norm_v), -1.0, 1.0)
-    angle = np.arccos(cos_theta)  # in radians
-    return angle
-
-def cylindrical_mask(shape, p0, v, radius):
-    """
-    Create a 2D binary mask of a 'cylinder' (thick line) along vector `v` passing through `p0`.
-    
-    Args:
-        shape (tuple): Shape of the 2D image (height, width)
-        p0 (np.array): A point [y, x] the vector passes through
-        v (np.array): Direction vector [vy, vx]
-        radius (float): Cylinder radius (in pixels)
-
-    Returns:
-        mask (2D np.array): Binary mask with True inside the cylinder
-    """
-    h, w = shape
-    Y, X = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
-    
-    # Shift grid by point
-    dy = Y - p0[0]
-    dx = X - p0[1]
-    
-    # Normalize direction vector
-    v = v / np.linalg.norm(v)
-    
-    # Compute perpendicular distance to the line (vector projection method)
-    # Distance = ||(point - p0) - ((point - p0) · v) * v||
-    dot = dx * v[1] + dy * v[0]
-    proj_x = dot * v[1]
-    proj_y = dot * v[0]
-    perp_x = dx - proj_x
-    perp_y = dy - proj_y
-    dist = np.sqrt(perp_x**2 + perp_y**2)
-    
-    # Inside mask if distance < radius
-    mask = dist < radius
-    return mask
-
-def compute_solidity_2d(mask):
-    labeled = measure.label(mask)
-    props = measure.regionprops(labeled)[0]
-    return props.solidity
 
 def crop_around_binary(volume):
     """
