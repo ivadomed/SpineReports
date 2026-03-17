@@ -1747,14 +1747,20 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
     AP_mask = v_mask*canal_bin
     AP_coords = np.argwhere(AP_mask)
     projections = np.dot(AP_coords, v)  # Project onto vector
-    diameter_AP_canal = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
-
+    if projections:
+        diameter_AP_canal = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
+    else:
+        diameter_AP_canal = 0
+    
     # Compute RL diameter along w
     w_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=w, radius=2) # Create cylindrical mask along w
     RL_mask = w_mask*canal_bin
     RL_coords = np.argwhere(RL_mask)
     projections = np.dot(RL_coords, w)  # Project onto vector
-    diameter_RL_canal = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
+    if projections:
+        diameter_RL_canal = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
+    else:
+        diameter_RL_canal = 0
 
     # Compute symmetry score using the canal area
     dot_product = np.dot(coords - canal_pos, w)
@@ -1795,14 +1801,20 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
         AP_mask = v_mask*spinalcord_bin
         AP_coords = np.argwhere(AP_mask)
         projections = np.dot(AP_coords, v)  # Project onto vector
-        diameter_AP_spinalcord = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
+        if projections:
+            diameter_AP_spinalcord = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
+        else:
+            diameter_AP_spinalcord = 0
 
         # Compute RL diameter along w
         w_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=w, radius=2) # Create cylindrical mask along w
         RL_mask = w_mask*spinalcord_bin
         RL_coords = np.argwhere(RL_mask)
         projections = np.dot(RL_coords, w)  # Project onto vector
-        diameter_RL_spinalcord = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
+        if projections:
+            diameter_RL_spinalcord = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
+        else:
+            diameter_RL_spinalcord = 0
 
         # Compute symmetry score using the canal area
         dot_product = np.dot(sc_coords - spinalcord_pos, w)
@@ -1830,6 +1842,7 @@ def _properties2d(canal, spinalcord, centerline, spine_centerline, dim):
         diameter_RL_spinalcord = -1
         eccentricity_spinalcord = -1
         solidity_spinalcord = -1
+        asymmetry_spinalcord_R_L = -1
     
     # Fill up dictionary
     properties = {
