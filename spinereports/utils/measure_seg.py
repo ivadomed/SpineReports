@@ -15,7 +15,7 @@ from sklearn.mixture import GaussianMixture
 import colorsys
 
 from spinereports.utils.image import Image, resample_nib, zeros_like
-from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d, project_point_centerline, get_centerline
+from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d, project_point_centerline, get_centerline, fastest_dilation_edt
 from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
@@ -1102,7 +1102,7 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
     foramen_cube_mask = np.zeros_like(seg_foramen_data)
     foramen_cube_mask[np.min(foramens_coords[:,0]):np.max(foramens_coords[:,0]), np.min(foramens_coords[:,1]):np.max(foramens_coords[:,1]), np.min(foramens_coords[:,2]):np.max(foramens_coords[:,2])] = 1
     cropped_canal_mask[~foramen_cube_mask.astype(bool)] = 0 # Keep only canal at foramen level
-    dilated_canal_mask = morphology.binary_dilation(cropped_canal_mask, morphology.ball(10))
+    dilated_canal_mask = fastest_dilation_edt(cropped_canal_mask, radius=10)
     canal_dilated_coords = np.argwhere((dilated_canal_mask-cropped_canal_mask) > 0)
     canal_dilated_values = img_data[canal_dilated_coords[:, 0], canal_dilated_coords[:, 1], canal_dilated_coords[:, 2]]
     canal_dilated_proj_v = np.round(np.dot(canal_dilated_coords-canal_pos, v)).astype(int) # SI*

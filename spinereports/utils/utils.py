@@ -3,7 +3,8 @@ import platform
 from skimage import measure
 from scipy.spatial import KDTree
 from spinereports.utils.image import Image, zeros_like
-from scipy import interpolate
+from scipy import interpolate, ndimage
+from skimage import measure, morphology
 
 def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_deg=2.0, refine_step_deg=0.2):
     """
@@ -367,3 +368,12 @@ def bspline(x, y, xref, smooth, deg_bspline=3, pz=1):
     y_fit = interpolate.splev(xref, tck, der=0)
     y_fit_der = interpolate.splev(xref, tck, der=1)
     return y_fit, y_fit_der
+
+def fastest_dilation_edt(mask, radius):
+    # Calculate distance from the canal (foreground is 1, background is 0)
+    # We want the distance of 0s from the 1s
+    distance = ndimage.distance_transform_edt(mask == 0)
+    
+    # The dilation is where the distance from the original mask is <= radius
+    # (Note: we use mask==0, so the distance is 0 inside the canal)
+    return distance <= radius
