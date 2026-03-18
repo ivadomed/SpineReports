@@ -178,7 +178,7 @@ def _properties2d(canal, spinalcord, dim, radius=2):
         diameter_RL_canal = 0
 
     # Compute symmetry score
-    asymmetry_canal_R_L = 1 - (2 * np.sum(np.abs(canal - np.flip(canal, axis=0))) / (np.sum(np.abs(canal + np.flip(canal, axis=0))) + 1e-8))
+    asymmetry_canal_R_L = 2 * np.sum(canal * np.flip(canal, axis=0)) / (np.sum(canal) + np.sum(np.flip(canal, axis=0)) + 1e-8)
 
     # Compute area
     area_canal = np.sum(canal) * dim[0] * dim[1]
@@ -221,7 +221,7 @@ def _properties2d(canal, spinalcord, dim, radius=2):
             diameter_RL_spinalcord = 0
 
         # Compute symmetry score
-        asymmetry_spinalcord_R_L = 1 - (2 * np.sum(np.abs(spinalcord - np.flip(spinalcord, axis=0))) / (np.sum(np.abs(spinalcord + np.flip(spinalcord, axis=0))) + 1e-8))
+        asymmetry_spinalcord_R_L = 2 * np.sum(spinalcord * np.flip(spinalcord, axis=0)) / (np.sum(spinalcord) + np.sum(np.flip(spinalcord, axis=0)) + 1e-8)
 
         # Compute area 
         area_spinalcord = np.sum(spinalcord) * dim[0] * dim[1]
