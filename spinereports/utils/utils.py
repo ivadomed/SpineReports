@@ -131,7 +131,11 @@ def straighten_coordinates(centerline, spine_centerline, radius):
                     longest_length = length
                     longest_start_idx = current_start_idx
                 current_start_idx = None
-    
+    if current_start_idx is not None:
+        length = i - current_start_idx
+        if length > longest_length and current_start_idx <= i-1:
+            longest_length = length
+            longest_start_idx = current_start_idx
     if longest_start_idx is None:
         raise ValueError("Cannot project spine centerline on orhtonal planes of the centerline.")
     
