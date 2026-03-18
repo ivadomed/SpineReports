@@ -1,6 +1,9 @@
 import numpy as np
 import platform
 from skimage import measure
+from scipy.spatial import KDTree
+from spinereports.utils.image import Image, zeros_like
+from scipy import interpolate
 
 def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_deg=2.0, refine_step_deg=0.2):
     """
@@ -303,3 +306,64 @@ def compute_solidity_2d(mask):
     labeled = measure.label(mask)
     props = measure.regionprops(labeled)[0]
     return props.solidity
+
+def project_point_centerline(centerline, ref_coord):
+    dist = np.linalg.norm(centerline - ref_coord, axis=1)
+    min_idx = np.argmin(dist)
+    return centerline[min_idx]    
+
+def get_centerline(seg, smooth=50):
+    '''
+    Based on https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/core.py
+
+    Extract centerline from canal segmentation using center of mass and interpolate with bspline
+    Expect orientation RPI
+    '''
+    arr = np.array(np.where(seg.data))
+    # Loop across SI axis and average coordinates within duplicate SI values
+    sorted_avg = []
+    for i_si in np.unique(arr[2]):
+        sorted_avg.append(arr[:, arr[2] == i_si].mean(axis=1))
+    x_mean, y_mean, z_mean = np.array(sorted_avg).T
+    z_ref = np.array(range(z_mean.min().astype(int), z_mean.max().astype(int) + 1))
+
+    # Interpolate centerline
+    px, py, pz = seg.dim[4:7]
+    x_centerline_fit, x_centerline_deriv = bspline(z_mean, x_mean, z_ref, smooth=smooth, pz=pz)
+    y_centerline_fit, y_centerline_deriv = bspline(z_mean, y_mean, z_ref, smooth=smooth, pz=pz)
+
+    # Construct output
+    arr_ctl = np.array([x_centerline_fit, y_centerline_fit, z_ref])
+    arr_ctl_der = np.array([x_centerline_deriv, y_centerline_deriv, np.ones_like(z_ref)])
+
+    # Create centerline dictionary
+    centerline = {"position": arr_ctl, "derivative": arr_ctl_der}
+    return centerline
+
+def bspline(x, y, xref, smooth, deg_bspline=3, pz=1):
+    """
+    Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/curve_fitting.py
+    Bspline interpolation.
+
+    The smoothing factor (s) is calculated based on an empirical formula (made by JCA, based on
+    preliminary results) and is a function of pz, density of points and an input smoothing parameter (smooth). The
+    formula is adjusted such that the parameter (smooth) produces similar smoothing results than a Hanning window with
+    length smooth, as implemented in linear().
+
+    :param x:
+    :param y:
+    :param xref:
+    :param smooth: float: Smoothing factor. 0: no smoothing, 5: moderate smoothing, 50: large smoothing
+    :param deg_bspline: int: Degree of spline
+    :param pz: float: dimension of pixel along superior-inferior direction (z, assuming RPI orientation)
+    :return:
+    """
+    if len(x) <= deg_bspline:
+        deg_bspline -= 2
+    density = (float(len(x)) / len(xref)) ** 2
+    s = density * smooth * pz / float(3)
+    # Then, run bspline interpolation
+    tck = interpolate.splrep(x, y, s=s, k=deg_bspline)
+    y_fit = interpolate.splev(xref, tck, der=0)
+    y_fit_der = interpolate.splev(xref, tck, der=1)
+    return y_fit, y_fit_der

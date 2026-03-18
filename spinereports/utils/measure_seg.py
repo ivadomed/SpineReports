@@ -5,11 +5,8 @@ from tqdm.contrib.concurrent import process_map
 from functools import partial
 from pathlib import Path
 import numpy as np
-from skimage import measure, transform, io, morphology, draw
+from skimage import measure, morphology
 from scipy import ndimage as ndi
-import math
-from scipy import interpolate
-import scipy
 import platform
 import csv
 import warnings
@@ -18,7 +15,7 @@ from sklearn.mixture import GaussianMixture
 import colorsys
 
 from spinereports.utils.image import Image, resample_nib, zeros_like
-from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d
+from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d, project_point_centerline, get_centerline
 from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
@@ -384,9 +381,6 @@ def measure_seg(img, seg, label, mapping):
     '''
     Compute morphometric measurements of the spinal canal, the intervertebral discs and the neural foramen
     '''
-    # Fetch discs label coordinates
-    discs_label = label.getNonZeroCoordinates(sorting='z')
-
     # Fetch unique segmentation values
     unique_seg = np.unique(seg.data)
 
@@ -402,13 +396,6 @@ def measure_seg(img, seg, label, mapping):
     # Normalize image intensity
     img.data = (img.data - np.mean(img.data)) / np.std(img.data) # Normalize with mean and std
 
-    # Create dict with z-slice and values for discs posterior tip
-    disc_slices = {}
-    for x, y, z, v in discs_label:
-        # Rescale z base on image resolution
-        z_rescaled = int(round(z * pz / pr))
-        disc_slices[z_rescaled] = v
-
     # Extract spinal canal from segmentation (CSF + SC)
     seg_canal = zeros_like(seg)
     seg_canal.data[seg.data == mapping['SC']] = 1
@@ -420,6 +407,18 @@ def measure_seg(img, seg, label, mapping):
     # Compute centerline distance
     distance = np.array([0] + [np.linalg.norm(centerline['position'][:,i] - centerline['position'][:,i-1]) for i in range(1, centerline['position'].shape[1])]).cumsum()
     centerline_distance = {int(centerline['position'][2, i]): distance[i] for i in range(centerline['position'].shape[1])}
+
+    # Project discs label coordinates on canal centerline
+    discs_label = np.array(label.getNonZeroCoordinates(sorting='z'))
+    proj_discs_label = [np.concatenate([np.round(project_point_centerline(centerline['position'].T, disc_label[:3])).astype(int), np.array([disc_label[-1]])]) for disc_label in discs_label]
+
+    # Create dict with z-slice and values for discs posterior tip
+    disc_slices = {}
+    for x, y, z, v in proj_discs_label:
+        # Rescale z base on image resolution
+        z_rescaled = int(round(z * pz / pr))
+        disc_slices[z_rescaled] = v
+
     # Init output dictionaries with metrics
     metrics = {}
     imgs = {}
@@ -442,6 +441,7 @@ def measure_seg(img, seg, label, mapping):
             "index": i,
             "slice_nb": k,
             "disc_level": disc_slices[k] if k in disc_slices else None,
+            "centerline_distance": centerline_distance[k],
             "slice_signal": v
             }
 
@@ -529,6 +529,7 @@ def measure_seg(img, seg, label, mapping):
             "index": i,
             "slice_nb": slice_nb,
             "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
+            "centerline_distance": centerline_distance[slice_nb],
             }
         for key in properties.keys():
             row[key] = properties[key][slice_nb]
@@ -1536,62 +1537,6 @@ def compute_thickness_profile(coords, rotation_matrix, bin_size=1.0):
                 # Extract thickness
                 thicknesses.append(max_SI-min_SI)
     return np.median(np.array(thicknesses))
-
-def get_centerline(seg, smooth=50):
-    '''
-    Based on https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/core.py
-
-    Extract centerline from canal segmentation using center of mass and interpolate with bspline
-    Expect orientation RPI
-    '''
-    arr = np.array(np.where(seg.data))
-    # Loop across SI axis and average coordinates within duplicate SI values
-    sorted_avg = []
-    for i_si in np.unique(arr[2]):
-        sorted_avg.append(arr[:, arr[2] == i_si].mean(axis=1))
-    x_mean, y_mean, z_mean = np.array(sorted_avg).T
-    z_ref = np.array(range(z_mean.min().astype(int), z_mean.max().astype(int) + 1))
-
-    # Interpolate centerline
-    px, py, pz = seg.dim[4:7]
-    x_centerline_fit, x_centerline_deriv = bspline(z_mean, x_mean, z_ref, smooth=smooth, pz=pz)
-    y_centerline_fit, y_centerline_deriv = bspline(z_mean, y_mean, z_ref, smooth=smooth, pz=pz)
-
-    # Construct output
-    arr_ctl = np.array([x_centerline_fit, y_centerline_fit, z_ref])
-    arr_ctl_der = np.array([x_centerline_deriv, y_centerline_deriv, np.ones_like(z_ref)])
-
-    # Create centerline dictionary
-    centerline = {"position": arr_ctl, "derivative": arr_ctl_der}
-    return centerline
-
-def bspline(x, y, xref, smooth, deg_bspline=3, pz=1):
-    """
-    Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/curve_fitting.py
-    Bspline interpolation.
-
-    The smoothing factor (s) is calculated based on an empirical formula (made by JCA, based on
-    preliminary results) and is a function of pz, density of points and an input smoothing parameter (smooth). The
-    formula is adjusted such that the parameter (smooth) produces similar smoothing results than a Hanning window with
-    length smooth, as implemented in linear().
-
-    :param x:
-    :param y:
-    :param xref:
-    :param smooth: float: Smoothing factor. 0: no smoothing, 5: moderate smoothing, 50: large smoothing
-    :param deg_bspline: int: Degree of spline
-    :param pz: float: dimension of pixel along superior-inferior direction (z, assuming RPI orientation)
-    :return:
-    """
-    if len(x) <= deg_bspline:
-        deg_bspline -= 2
-    density = (float(len(x)) / len(xref)) ** 2
-    s = density * smooth * pz / float(3)
-    # Then, run bspline interpolation
-    tck = interpolate.splrep(x, y, s=s, k=deg_bspline)
-    y_fit = interpolate.splev(xref, tck, der=0)
-    y_fit_der = interpolate.splev(xref, tck, der=1)
-    return y_fit, y_fit_der
 
 def crop_around_binary(volume):
     """
