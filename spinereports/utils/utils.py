@@ -99,24 +99,50 @@ def find_symmetry_vector_binary(mask, center, angle_step_deg=1.0, refine_window_
     return best_angle, vector_2d, best_sum
 
 def straighten_coordinates(centerline, spine_centerline, radius):
-    coordinates = np.zeros((3, 2*radius+1, 2*radius+1, len(centerline['position'].T)), dtype=float)
+    # Identify longest canal portion with complete base available
+    base_list = []
     for i, (origin, normal) in enumerate(zip(centerline['position'].T, centerline['derivative'].T)):
         superior = normal / np.linalg.norm(normal)  # in the S direction
 
         # Find anterior vector using spine centerline
         anterior_point = intersect_centerline_plane(spine_centerline, origin, superior)
         if anterior_point is None:
+            base_list.append(None)
             continue
 
         anterior = anterior_point - origin
         anterior = anterior / np.linalg.norm(anterior)  # in the A direction
         left = np.cross(superior, anterior)  # in the L direction
 
+        base_list.append((origin, left, anterior, superior))
+    
+    # Find longest portion of the centerline with complete base available
+    longest_start_idx = None
+    longest_length = 0
+    current_start_idx = None
+    for i, base in enumerate(base_list):
+        if base is not None:
+            if current_start_idx is None:
+                current_start_idx = i
+        else:
+            if current_start_idx is not None:
+                length = i - current_start_idx
+                if length > longest_length and current_start_idx <= i-1:
+                    longest_length = length
+                    longest_start_idx = current_start_idx
+                current_start_idx = None
+    
+    if longest_start_idx is None:
+        raise ValueError("Cannot project spine centerline on orhtonal planes of the centerline.")
+    
+    coordinates = np.zeros((3, 2*radius+1, 2*radius+1, longest_length), dtype=float)
+    centerline_start_idx = centerline['position'].T[longest_start_idx,2].astype(int)
+    for i, (origin, left, anterior, superior) in enumerate(base_list[longest_start_idx:longest_start_idx+longest_length]):
         steps = np.linspace(start=-radius, stop=+radius, num=2*radius+1)
         coordinates[:, :, :, i] = origin[:, None, None]
         coordinates[:, :, :, i] += steps[None, :, None] * left[:, None, None]
         coordinates[:, :, :, i] += steps[None, None, :] * anterior[:, None, None]
-    return coordinates
+    return coordinates, centerline_start_idx
 
 def intersect_centerline_plane(centerline, point, normal):
     for i in range(len(centerline['position'].T)-1):
