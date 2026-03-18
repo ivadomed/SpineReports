@@ -291,25 +291,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    # try:
-    metrics, imgs = measure_seg(
-        img=img,
-        seg=seg,
-        label=label,
-        mapping=mapping,
-    )
-    # except ValueError as e:
-    #     print(f'ValueError: {seg_path}, {e}')
-    #     return
-    # except KeyError as e:
-    #     print(f'KeyError: {seg_path}, {e}')
-    #     return
-    # except IndexError as e:
-    #     print(f'IndexError: {seg_path}, {e}')
-    #     return
-    # except Exception as e:
-    #     print(f'Error: {seg_path}, {e}')
-    #     return
+    try:
+        metrics, imgs = measure_seg(
+            img=img,
+            seg=seg,
+            label=label,
+            mapping=mapping,
+        )
+    except ValueError as e:
+        print(f'ValueError: {seg_path}, {e}')
+        return
+    except KeyError as e:
+        print(f'KeyError: {seg_path}, {e}')
+        return
+    except IndexError as e:
+        print(f'IndexError: {seg_path}, {e}')
+        return
+    except Exception as e:
+        print(f'Error: {seg_path}, {e}')
+        return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -1151,7 +1151,7 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
         # Create image
         seg = np.zeros((np.max(x_coords)+1, np.max(y_coords)+1))
         for x, y in zip(canal_coords_x, canal_coords_y):
-            if x > 0 and y > 0 and x-1 < seg.shape[0] and y-1 < seg.shape[1]:
+            if x > 0 and y > 0 and x < seg.shape[0] and y < seg.shape[1]:
                 seg[x, y]=2
         
         for x, y in zip(x_coords, y_coords):
@@ -1318,13 +1318,13 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
 
         seg_3d_foramen = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.uint8) # RL, AP, SI
         for x, y, z in zip(foramen_coords_3d[:, 0], foramen_coords_3d[:, 1], foramen_coords_3d[:, 2]):
-            if x > 0 and y > 0 and x-1 < seg_3d_foramen.shape[0] and y-1 < seg_3d_foramen.shape[1] and z-1 < seg_3d_foramen.shape[2]:
+            if x > 0 and y > 0 and x < seg_3d_foramen.shape[0] and y < seg_3d_foramen.shape[1] and z < seg_3d_foramen.shape[2]:
                 seg_3d_foramen[x, y, z] = 1
         
         seg_3d_canal = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.float32) # RL, AP, SI
         img_3d_foramen = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.float32) # RL, AP, SI
         for val, x, y, z in zip(canal_dilated_values, canal_dilated_proj_n_side, canal_dilated_proj_v_side, canal_dilated_proj_w_side):
-            if x > 0 and y > 0 and x-1 < seg_3d_canal.shape[0] and y-1 < seg_3d_canal.shape[1] and z-1 < seg_3d_canal.shape[2]:
+            if x > 0 and y > 0 and x < seg_3d_canal.shape[0] and y < seg_3d_canal.shape[1] and z < seg_3d_canal.shape[2]:
                 seg_3d_canal[x, y, z] = 1
                 img_3d_foramen[x, y, z] = val
 
