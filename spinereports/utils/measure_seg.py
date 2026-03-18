@@ -1343,7 +1343,7 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
         # compression_fraction = np.argwhere(img_slice>=low_signal).shape[0]/nonzero.shape[0]
         # im = (im - mi) / (ma - mi + 1e-8)
         crop_size = (np.min(nonzero[:,0]), np.max(nonzero[:,0]), np.min(nonzero[:,1]), np.max(nonzero[:,1]))
-        im = img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]]
+        im = np.flipud(img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]])
         shape = foramens_img[side].shape
         foramens_img[side][shape[0]//2-im.shape[0]//2:shape[0]//2+im.shape[0]-im.shape[0]//2, shape[1]//2-im.shape[1]//2:shape[1]//2+im.shape[1]-im.shape[1]//2] = im
     return foramens_areas, foramens_img, foramens_seg
