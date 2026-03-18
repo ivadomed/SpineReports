@@ -841,7 +841,7 @@ def measure_canal(seg_canal, centerline, spine_centerline):
             for property_name in property_list:
                 shape_properties[property_name][first_z_index+iz] = shape_property[property_name]
         else:
-            print(f'Warning: error with slice {first_z_index+iz}.')
+            raise ValueError(f'Warning: error with slice {first_z_index+iz}.')
 
     return shape_properties
 
@@ -1281,6 +1281,7 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
                 img_padding = padding - 5
                 foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
                 foramen_mask = None
+        
         foramens_img[side] = np.zeros(foramens_seg[side].shape, dtype=np.float32)
         ## Extract foramen intensity from extruded 2D foramen mask intersected with canal shell
         if foramen_mask is None or np.sum(foramen_mask) == 0 or canal_dilated_coords.shape[0] == 0:
@@ -1327,6 +1328,8 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_canal_data, 
                 img_3d_foramen[x, y, z] = val
 
         mask_intersection = seg_3d_foramen * seg_3d_canal
+        if np.sum(mask_intersection) == 0:
+            continue
         img_3d_foramen_intersection = img_3d_foramen * mask_intersection
         median_idx = int(np.median(np.argwhere(mask_intersection!=0)[:,0]))
 
@@ -1606,9 +1609,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-183_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-183_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-183_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-060_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-060_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-060_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
