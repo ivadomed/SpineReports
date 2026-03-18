@@ -417,6 +417,9 @@ def measure_seg(img, seg, label, mapping):
     # Extract canal centerline
     centerline = get_centerline(seg_canal)
 
+    # Compute centerline distance
+    distance = np.array([0] + [np.linalg.norm(centerline['position'][:,i] - centerline['position'][:,i-1]) for i in range(1, centerline['position'].shape[1])]).cumsum()
+    centerline_distance = {int(centerline['position'][2, i]): distance[i] for i in range(centerline['position'].shape[1])}
     # Init output dictionaries with metrics
     metrics = {}
     imgs = {}
