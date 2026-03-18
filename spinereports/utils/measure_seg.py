@@ -830,19 +830,20 @@ def measure_canal(seg_canal, centerline, spine_centerline):
     straightened_spinalcord = ndimage.map_coordinates(sc_seg, straightened_coordinates, order=1, mode='grid-constant')    
 
     # Loop across the S-I slices
-    min_z_index = np.argwhere(straightened_canal>0)[:,2].min()
-    max_z_index = np.argwhere(straightened_canal>0)[:,2].max()
+    first_z_index = centerline['position'].T[:,2][0].astype(int)
+    min_index = np.argwhere(straightened_canal>0)[:,2].min()
+    max_index = np.argwhere(straightened_canal>0)[:,2].max()
     shape_properties = {key: {} for key in property_list}
-    for iz in range(min_z_index, max_z_index + 1):
+    for iz in range(min_index, max_index + 1):
         # Calculate shape metrics
         shape_property = _properties2d(straightened_canal[:, :, iz], straightened_spinalcord[:, :, iz], [px, py])
 
         if shape_property is not None:
             # Loop across properties and assign values for function output
             for property_name in property_list:
-                shape_properties[property_name][iz] = shape_property[property_name]
+                shape_properties[property_name][first_z_index+iz] = shape_property[property_name]
         else:
-            print(f'Warning: error with slice {iz}.')
+            print(f'Warning: error with slice {first_z_index+iz}.')
 
     return shape_properties
 
