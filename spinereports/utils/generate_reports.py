@@ -1109,8 +1109,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 img_name = f'{struc_name}'
-                img_left = plt.imread(str(imgs_path / f'{img_name}_left.png'))
-                img_right = plt.imread(str(imgs_path / f'{img_name}_right.png'))
+                img_left = plt.imread(str(imgs_path / f'{img_name}_left_seg.png'))
+                img_right = plt.imread(str(imgs_path / f'{img_name}_right_seg.png'))
 
                 # Concatenate images after padding to the maximal shape
                 max_height = max(img_left.shape[0], img_right.shape[0])
