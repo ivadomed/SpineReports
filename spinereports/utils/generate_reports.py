@@ -321,7 +321,7 @@ def generate_reports(
                 for metric in control_data[struc][struc_name].keys():
                     # Add subject to all_values
                     subject_value = control_data[struc][struc_name][metric]
-                    if subject_value != -1:
+                    if (isinstance(subject_value, list) and np.isin(['disc_level', 'centerline_distance'], np.array(list(control_data['canal']['canal'].keys()))).all()) or isinstance(subject_value, (int, float)) and subject_value != -1:
                         if struc not in all_values['all']:
                             all_values['all'][struc] = {}
                         if struc_name not in all_values['all'][struc]:
@@ -385,7 +385,7 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
         chunksize=1,
         disable=quiet,
     )
-    #create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
+    # create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
     # Load spinereports resources path
@@ -467,14 +467,15 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
     for struc in ['canal', 'csf']:
         for struc_name in subject_data[struc].keys():
             for metric in subject_data[struc][struc_name].keys():
-                if metric in ['slice_nb', 'disc_level']:
+                if metric in ['slice_nb', 'disc_level', 'centerline_distance']:
                     continue
-                interp_values, slice_interp = rescale_with_discs(subject_data[struc][struc_name]['disc_level'], subject_data[struc][struc_name][metric], rev_mapping, discs_gap, last_disc)
+                interp_values, slice_interp = rescale_with_discs(subject_data[struc][struc_name]['disc_level'], subject_data[struc][struc_name]['centerline_distance'], subject_data[struc][struc_name][metric], rev_mapping, discs_gap, last_disc)
                 interp_data[struc][struc_name][metric] = interp_values
             interp_data[struc][struc_name]['slice_interp'] = slice_interp
             # remove slice_nb and disc_level from dict
             interp_data[struc][struc_name].pop('slice_nb', None)
             interp_data[struc][struc_name].pop('disc_level', None)
+            interp_data[struc][struc_name].pop('centerline_distance', None)
 
     # Create figures    
     ofolder_subject.mkdir(parents=True, exist_ok=True)
@@ -621,7 +622,7 @@ def process_canal(subject_data):
     
     # Create spinalcord/canal quotient
     for key in canal_dict['spinalcord'].keys():
-        if not key in ['slice_nb', 'disc_level']:
+        if not key in ['slice_nb', 'disc_level', 'centerline_distance']:
             canal_dict['spinalcord/canal'][key] = []
             for i in range(len(canal_dict['spinalcord'][key])):
                 canal_value = canal_dict['canal'][key][i]
@@ -690,6 +691,7 @@ def rescale_canal(all_values, rev_mapping):
     struc_name = 'canal'
     # Align all metrics for each subject using discs level as references
     disc_levels = all_values['all'][struc][struc_name]['disc_level']
+    centerline_distances = all_values['all'][struc][struc_name]['centerline_distance']
     # Flatten the list of arrays and concatenate all unique values
     all_discs = np.unique(np.concatenate([np.unique(dl) for dl in disc_levels]))
     all_discs = all_discs[~np.isnan(all_discs)]
@@ -697,27 +699,39 @@ def rescale_canal(all_values, rev_mapping):
     # For each subject count slices between discs
     n_subjects = len(disc_levels)
     gap_dict = {}
+    exclude_list = []
     for subj_idx in range(n_subjects):
         subj_disc_level = np.array(disc_levels[subj_idx])            
         subj_valid = ~pd.isna(subj_disc_level)
         subj_disc_positions = np.where(subj_valid)[0]
         subj_disc_values = subj_disc_level[subj_valid]
+        subj_centerline_distances = np.array(centerline_distances[subj_idx])
 
-        # If the number of discs doesn't match, skip this subject
+        # If too few discs appear, skip this subject
         if len(subj_disc_values) < 2:
+            exclude_list.append(subj_idx)
             continue
         
+        # Ensure there is no problem with disc labeling
+        disc_list_noerror = np.array(list(range(np.max(subj_disc_values).astype(int), np.min(subj_disc_values).astype(int)-1, -1)))
+        if len(subj_disc_values) != len(disc_list_noerror):
+            exclude_list.append(subj_idx)
+            continue
+        if not (subj_disc_values == disc_list_noerror).all():
+            exclude_list.append(subj_idx)
+            continue
+
         # Create dict with number of slice between discs
         previous_disc = subj_disc_values[0]
         previous_pos = subj_disc_positions[0]
         for pos, disc in zip(subj_disc_positions[1:], subj_disc_values[1:]):
             if f"{previous_disc}-{disc}" not in gap_dict:
                 gap_dict[f"{previous_disc}-{disc}"] = []
-            gap_dict[f"{previous_disc}-{disc}"].append(pos - previous_pos)
+            gap_dict[f"{previous_disc}-{disc}"].append(subj_centerline_distances[pos] - subj_centerline_distances[previous_pos])
             previous_disc = disc
             previous_pos = pos
 
-    # Pick max for each gap between discs in gap_dict
+    # Pick median for each gap between discs in gap_dict
     gap_list = []
     discs_list = []
     for k, v in gap_dict.items():
@@ -728,19 +742,25 @@ def rescale_canal(all_values, rev_mapping):
     discs_gap = int(round(np.median(gap_list)))
     last_disc = rev_mapping[max(discs_list)]
 
+    # Rescale canal and CSF metrics for each subject using discs
     for key in all_values.keys():
         for struc in ['canal', 'csf']:
             for struc_name in all_values[key][struc].keys():
                 # Rescale subjects
                 add_slice_interp = True
                 for metric in all_values[key][struc][struc_name].keys():
-                    if metric in ['slice_nb', 'disc_level']:
+                    if metric in ['slice_nb', 'disc_level', 'centerline_distance']:
                         continue
                     for subj_idx in range(len(all_values[key][struc][struc_name][metric])):
-                        try:
-                            interp_values, slice_interp = rescale_with_discs(all_values[key][struc][struc_name]['disc_level'][subj_idx], all_values[key][struc][struc_name][metric][subj_idx], rev_mapping, discs_gap, last_disc)
-                        except TypeError as e:
-                            print(f"Error rescaling subject {subj_idx} for {struc_name} metric {metric}: {e}")
+                        if not subj_idx in exclude_list:
+                            try:
+                                interp_values, slice_interp = rescale_with_discs(all_values[key][struc][struc_name]['disc_level'][subj_idx], all_values['all'][struc][struc_name]['centerline_distance'][subj_idx], all_values[key][struc][struc_name][metric][subj_idx], rev_mapping, discs_gap, last_disc)
+                            except TypeError as e:
+                                print(f"Error rescaling subject {subj_idx} for {struc_name} metric {metric}: {e}")
+                                interp_values = []
+                                slice_interp = []
+                        else:
+                            # Exclude subject with error in disc labeling
                             interp_values = []
                             slice_interp = []
                         new_values[key][struc][struc_name][metric][subj_idx] = interp_values
@@ -752,15 +772,17 @@ def rescale_canal(all_values, rev_mapping):
                 # Remove slice_nb and disc_level from dict
                 new_values[key][struc][struc_name].pop('slice_nb', None)
                 new_values[key][struc][struc_name].pop('disc_level', None)
-
+                new_values[key][struc][struc_name].pop('centerline_distance', None)
+    
     return new_values, discs_gap, last_disc
 
-def rescale_with_discs(disc_levels, metric_list, rev_mapping, gap, last_disc):
+def rescale_with_discs(disc_levels, centerline_distances, metric_list, rev_mapping, gap, last_disc):
     '''
     Return rescaled metric values and corresponding slice indices using disc levels and gap information.
     '''
     # Rescale data for each metric
     subj_disc_level = np.array(disc_levels)
+    subj_centerline_distances = np.array(centerline_distances)
     subj_valid = ~pd.isna(subj_disc_level)
     subj_disc_positions = np.where(subj_valid)[0]
     subj_disc_values = subj_disc_level[subj_valid]
@@ -776,7 +798,8 @@ def rescale_with_discs(disc_levels, metric_list, rev_mapping, gap, last_disc):
     for disc_idx, disc in enumerate(subj_disc_values):
         if disc_idx < len(subj_disc_values) - 1:
             yp = values[subj_disc_positions[disc_idx]:subj_disc_positions[disc_idx+1]]
-            xp = np.linspace(0, gap-1, len(yp))
+            xp = subj_centerline_distances[subj_disc_positions[disc_idx]:subj_disc_positions[disc_idx+1]]
+            xp -= np.min(xp)
             x = np.linspace(0, gap-1, gap)
             if not -1 in yp:
                 if yp.size > 0:
