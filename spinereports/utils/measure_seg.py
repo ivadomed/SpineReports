@@ -291,25 +291,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    try:
-        metrics, imgs = measure_seg(
-            img=img,
-            seg=seg,
-            label=label,
-            mapping=mapping,
-        )
-    except ValueError as e:
-        print(f'ValueError: {seg_path}, {e}')
-        return
-    except KeyError as e:
-        print(f'KeyError: {seg_path}, {e}')
-        return
-    except IndexError as e:
-        print(f'IndexError: {seg_path}, {e}')
-        return
-    except Exception as e:
-        print(f'Error: {seg_path}, {e}')
-        return
+    # try:
+    metrics, imgs = measure_seg(
+        img=img,
+        seg=seg,
+        label=label,
+        mapping=mapping,
+    )
+    # except ValueError as e:
+    #     print(f'ValueError: {seg_path}, {e}')
+    #     return
+    # except KeyError as e:
+    #     print(f'KeyError: {seg_path}, {e}')
+    #     return
+    # except IndexError as e:
+    #     print(f'IndexError: {seg_path}, {e}')
+    #     return
+    # except Exception as e:
+    #     print(f'Error: {seg_path}, {e}')
+    #     return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -422,31 +422,6 @@ def measure_seg(img, seg, label, mapping):
     # Init output dictionaries with metrics
     metrics = {}
     imgs = {}
-
-    # Measure CSF signal
-    seg_csf_data = (seg.data == mapping['CSF']).astype(int)
-    properties = measure_csf(img.data, seg_csf_data)
-    csf_signal = properties['csf_signal']
-
-    p5 = np.percentile(img.data, 5)
-    p95 = np.percentile(img.data, 95)
-    img.data = (img.data - p5) / (csf_signal - p5 + 1e-8)
-    img.data = np.clip(img.data, 0, 1)
-    csf_signal = 1.0
-
-    rows = []
-    for i, (k, v) in enumerate(properties['slice_signal'].items()):
-        row = {
-            "structure": "csf",
-            "index": i,
-            "slice_nb": k,
-            "disc_level": disc_slices[k] if k in disc_slices else None,
-            "centerline_distance": centerline_distance[k],
-            "slice_signal": v
-            }
-
-        rows.append(row)
-    metrics['csf'] = rows
     
     # Compute metrics onto vertebrae
     vertebrae_rows = []
@@ -518,6 +493,34 @@ def measure_seg(img, seg, label, mapping):
     #         img_slice_rgb[coords[idx[0]], coords[idx[1]]] = [0, 1, 0] # Green overlay
     #     os.makedirs(f'test/canal/', exist_ok=True)
     #     cv2.imwrite(f'test/canal/projection_{i}.png', img_slice_rgb*125)
+
+    # Measure CSF signal
+    seg_csf_data = (seg.data == mapping['CSF']).astype(int)
+    properties = measure_csf(img.data, seg_csf_data, centerline, spine_centerline)
+    csf_signal = properties['csf_signal']
+    del properties['csf_signal']
+
+    p5 = np.percentile(img.data, 5)
+    p95 = np.percentile(img.data, 95)
+    img.data = (img.data - p5) / (csf_signal - p5 + 1e-8)
+    img.data = np.clip(img.data, 0, 1)
+    csf_signal = 1.0
+
+    rows = []
+    for i in range(len(properties[list(properties.keys())[0]])):
+        slice_nb = list(properties[list(properties.keys())[0]].keys())[i]
+        row = {
+            "structure": "csf",
+            "index": i,
+            "slice_nb": slice_nb,
+            "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
+            "centerline_distance": centerline_distance[slice_nb]
+            }
+        for key in properties.keys():
+            row[key] = properties[key][slice_nb]
+
+        rows.append(row)
+    metrics['csf'] = rows
 
     # Compute metrics onto canal segmentation
     properties = measure_canal(seg_canal, centerline, spine_centerline)
@@ -758,37 +761,88 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     img_dict = {'seg':disc_seg_bgr, 'img':disc_img_bgr}
     return properties, img_dict, True
 
-def measure_csf(img_data, seg_csf_data):
+def measure_csf(img_data, seg_csf_data, centerline, spine_centerline):
     '''
     Extract signal from cerebro spinal fluid (CSF)
     '''
-    # Extract min and max index in Z direction
-    X, Y, Z = seg_csf_data.nonzero()
-    min_z_index, max_z_index = min(Z), max(Z)
-
     coords = np.argwhere(seg_csf_data > 0)
     values = np.array([img_data[c[0], c[1], c[2]] for c in coords])
 
     # Loop across z axis
     properties = {
         'slice_signal':{},
+        'left_slice_signal':{},
+        'right_slice_signal':{},
         'csf_signal': np.percentile(values, 90)
     }
-    for iz in range(min_z_index, max_z_index + 1):
-        # Extract csf coordinates in the slice
-        slice_csf = seg_csf_data[:, :, iz].astype(bool)
+    
+    # Straighten canal and spinalcord to extract metrics
+    radius = 50 # mm, radius of the straightened patch to extract around the centerline
+    straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
+    straightened_csf = ndimage.map_coordinates(seg_csf_data, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_image = ndimage.map_coordinates(img_data, straightened_coordinates, order=1, mode='grid-constant')    
+
+    # Pick longest segment with non empty slices
+    empty_slices = np.array([np.sum(straightened_csf[:, :, iz]) == 0 for iz in range(straightened_csf.shape[2])])
+    if np.all(empty_slices):
+        raise ValueError('No canal found in any slice after straightening.')
+    elif not np.any(empty_slices):
+        min_index = np.argwhere(straightened_csf>0)[:,2].min()
+        max_index = np.argwhere(straightened_csf>0)[:,2].max()
+    else:
+        empty_slices_indices = np.where(empty_slices)[0]+1
+        if not empty_slices_indices[0] == 0:
+            empty_slices_indices = np.insert(empty_slices_indices, 0, 0)
+        if not empty_slices_indices[-1] == straightened_csf.shape[-1] - 1:
+            empty_slices_indices = np.insert(empty_slices_indices, len(empty_slices_indices), straightened_csf.shape[-1] -1)
+        segments = [empty_slices_indices[i+1]-empty_slices_indices[i] for i in range(len(empty_slices_indices)-1)]
+        longest_segment_idx = np.argmax(segments)
+        min_index = empty_slices_indices[longest_segment_idx]
+        max_index = empty_slices_indices[longest_segment_idx+1]
+    
+    # Loop across the S-I slices
+    for iz in range(min_index, max_index + 1):
+        # Extract csf slice
+        shape = straightened_csf[:, :, iz].shape
+        slice_csf = straightened_csf[:, :, iz].astype(bool)
+
+        # Extract side csf slice
+        min_index = np.min(np.where(slice_csf>0)[0])
+        max_index = np.max(np.where(slice_csf>0)[0])
+        right_slice = np.zeros(shape)
+        right_index = min_index + (max_index-min_index)//4
+        right_slice[:right_index+1, :] = slice_csf[:right_index+1, :]
+        
+        left_slice = np.zeros(shape)
+        left_index = max_index - (max_index-min_index)//4
+        left_slice[left_index:, :] = slice_csf[left_index:, :]
 
         # Extract images values using segmentation
-        slice_values = img_data[:, :, iz][slice_csf]
+        slice_values = straightened_image[:, :, iz][slice_csf]
+        right_slice_values = straightened_image[:, :, iz][right_slice.astype(bool)]
+        left_slice_values = straightened_image[:, :, iz][left_slice.astype(bool)]
 
         # Extract most represented value
         if slice_values.size == 0:
             signal = 0
         else:
             signal = np.percentile(slice_values, 90)
+        
+        if right_slice_values.size == 0:
+            right_signal = 0
+        else:
+            right_signal = np.percentile(right_slice_values, 90)
+        
+        if left_slice_values.size == 0:
+            left_signal = 0
+        else:
+            left_signal = np.percentile(left_slice_values, 90)
 
         # Save values
-        properties['slice_signal'][iz] = signal/properties['csf_signal']
+        properties['slice_signal'][first_z_index+iz] = signal/properties['csf_signal']
+        properties['left_slice_signal'][first_z_index+iz] = left_signal/properties['csf_signal']
+        properties['right_slice_signal'][first_z_index+iz] = right_signal/properties['csf_signal']
+
     return properties
 
 def measure_canal(seg_canal, centerline, spine_centerline):
@@ -1629,9 +1683,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-181_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-181_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-181_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-029_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
