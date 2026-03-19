@@ -216,6 +216,8 @@ def _properties2d(canal, spinalcord, dim, radius=2):
 
     # Compute area
     area_canal = np.sum(canal) * dim[0] * dim[1]
+    right_area_canal = np.sum(canal[:canal.shape[0]//2+1, :]) * dim[0] * dim[1]
+    left_area_canal = np.sum(canal[canal.shape[1]//2:, :]) * dim[0] * dim[1]
 
     # Compute eccentricity
     if diameter_AP_canal < diameter_RL_canal:
@@ -259,6 +261,8 @@ def _properties2d(canal, spinalcord, dim, radius=2):
 
         # Compute area 
         area_spinalcord = np.sum(spinalcord) * dim[0] * dim[1]
+        right_area_spinalcord = np.sum(spinalcord[:spinalcord.shape[0]//2+1, :]) * dim[0] * dim[1]
+        left_area_spinalcord = np.sum(spinalcord[spinalcord.shape[0]//2:, :]) * dim[0] * dim[1]
 
         # Compute eccentricity 
         if diameter_AP_spinalcord < diameter_RL_spinalcord:
@@ -273,6 +277,8 @@ def _properties2d(canal, spinalcord, dim, radius=2):
             solidity_spinalcord = compute_solidity_2d(spinalcord)
     else:
         area_spinalcord = -1
+        right_area_spinalcord = -1
+        left_area_spinalcord = -1
         diameter_AP_spinalcord = -1
         diameter_RL_spinalcord = -1
         eccentricity_spinalcord = -1
@@ -283,6 +289,10 @@ def _properties2d(canal, spinalcord, dim, radius=2):
     properties = {
         'area_canal': area_canal,
         'area_spinalcord': area_spinalcord,
+        'right_area_canal': right_area_canal,
+        'left_area_canal': left_area_canal,
+        'right_area_spinalcord': right_area_spinalcord,
+        'left_area_spinalcord': left_area_spinalcord,
         'diameter_AP_canal': diameter_AP_canal,
         'diameter_AP_spinalcord': diameter_AP_spinalcord,
         'diameter_RL_canal': diameter_RL_canal,
