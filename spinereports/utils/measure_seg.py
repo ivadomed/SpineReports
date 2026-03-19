@@ -832,9 +832,25 @@ def measure_canal(seg_canal, centerline, spine_centerline):
     straightened_canal = ndimage.map_coordinates(canal_seg, straightened_coordinates, order=1, mode='grid-constant')
     straightened_spinalcord = ndimage.map_coordinates(sc_seg, straightened_coordinates, order=1, mode='grid-constant')    
 
+    # Pick longest segment with non empty slices
+    empty_slices = np.array([np.sum(straightened_canal[:, :, iz]) == 0 for iz in range(straightened_canal.shape[2])])
+    if np.all(empty_slices):
+        raise ValueError('No canal found in any slice after straightening.')
+    elif not np.any(empty_slices):
+        min_index = np.argwhere(straightened_canal>0)[:,2].min()
+        max_index = np.argwhere(straightened_canal>0)[:,2].max()
+    else:
+        empty_slices_indices = np.where(empty_slices)[0]+1
+        if not empty_slices_indices[0] == 0:
+            empty_slices_indices = np.insert(empty_slices_indices, 0, 0)
+        if not empty_slices_indices[-1] == straightened_canal.shape[-1] - 1:
+            empty_slices_indices = np.insert(empty_slices_indices, len(empty_slices_indices), straightened_canal.shape[-1] -1)
+        segments = [empty_slices_indices[i+1]-empty_slices_indices[i] for i in range(len(empty_slices_indices)-1)]
+        longest_segment_idx = np.argmax(segments)
+        min_index = empty_slices_indices[longest_segment_idx]
+        max_index = empty_slices_indices[longest_segment_idx+1]
+    
     # Loop across the S-I slices
-    min_index = np.argwhere(straightened_canal>0)[:,2].min()
-    max_index = np.argwhere(straightened_canal>0)[:,2].max()
     shape_properties = {key: {} for key in property_list}
     for iz in range(min_index, max_index + 1):
         # Calculate shape metrics
@@ -1613,9 +1629,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-210_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-210_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-210_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-181_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-181_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-181_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
