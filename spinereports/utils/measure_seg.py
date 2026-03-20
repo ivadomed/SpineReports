@@ -475,7 +475,7 @@ def measure_seg(img, seg, label, mapping):
         seg_bin.data[seg.data == 50] = 1
     dilation_radius = 1.5//pr  # 1.5 mm
     seg_bin.data = binary_dilation(seg_bin.data, ball(dilation_radius)) # Dilate seg_bin to remove gap between discs and vertebrae
-    spine_centerline = get_centerline(seg_bin, smooth=500) # Smooth more than canal centerline to get a smoother spine centerline
+    spine_centerline = get_centerline(seg_bin, smooth=10000) # Smooth more than canal centerline to get a smoother spine centerline
 
     # # Show spine centerline and canal centerline
     # for i in range(3):
