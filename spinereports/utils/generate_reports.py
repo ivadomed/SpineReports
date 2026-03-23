@@ -1095,7 +1095,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
-            ncols = len(metrics) + 2
+            ncols = len(metrics) + 3
             scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
             header_fs = _fs(45, scale, min_fs=12, max_fs=90)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
@@ -1118,13 +1118,15 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 1:
                     axes[i].text(0.5, 0.5, "Segmentation", fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                elif i == 2:
+                    axes[i].text(0.5, 0.5, "Image", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 else:
-                    if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 2]}.jpg')):
+                    if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 3]}.jpg')):
                         # Load image 
-                        img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 2]}.jpg')
+                        img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 3]}.jpg')
                         axes[i].imshow(plt.imread(img_path))
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i - 2], fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                        axes[i].text(0.5, 0.5, metrics[i - 3], fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 
                 axes[i].set_axis_off()
                 idx += 1
@@ -1132,18 +1134,25 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 img_name = f'{struc_name}'
-                img_left = plt.imread(str(imgs_path / f'{img_name}_left_seg.png'))
-                img_right = plt.imread(str(imgs_path / f'{img_name}_right_seg.png'))
+                seg_left = plt.imread(str(imgs_path / f'{img_name}_left_seg.png'))
+                seg_right = plt.imread(str(imgs_path / f'{img_name}_right_seg.png'))
+                img_left = plt.imread(str(imgs_path / f'{img_name}_left_img.png'))
+                img_right = plt.imread(str(imgs_path / f'{img_name}_right_img.png'))
 
                 # Concatenate images after padding to the maximal shape
-                max_height = max(img_left.shape[0], img_right.shape[0])
+                max_height = max(seg_left.shape[0], seg_right.shape[0])
+                seg_left_padded = np.pad(np.fliplr(seg_left), ((0, max_height - seg_left.shape[0]), (0, 0)), mode='constant')
+                seg_right_padded = np.pad(seg_right, ((0, max_height - seg_right.shape[0]), (0, 0)), mode='constant')
                 img_left_padded = np.pad(np.fliplr(img_left), ((0, max_height - img_left.shape[0]), (0, 0)), mode='constant')
                 img_right_padded = np.pad(img_right, ((0, max_height - img_right.shape[0]), (0, 0)), mode='constant')
+                seg = np.concatenate((seg_right_padded, seg_left_padded), axis=1)
                 img = np.concatenate((img_right_padded, img_left_padded), axis=1)
 
-                axes[idx+1].imshow(img)
+                axes[idx+1].imshow(seg)
                 axes[idx+1].set_axis_off()
-                idx += 2
+                axes[idx+2].imshow(img)
+                axes[idx+2].set_axis_off()
+                idx += 3
                 for metric in metrics:
                     ax = axes[idx]
                     add_group = False
