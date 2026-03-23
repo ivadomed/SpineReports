@@ -1528,8 +1528,9 @@ def compute_foramen_compression_ratio(metric_rows, imgs):
         # normalize foramen image for visualization
         if np.sum(foramens_list[i]) != 0:
             im = imgs[name.replace("img_nodilate", "img")]
-            ma = np.max(im)
-            mi = np.min(im)
+            im2 = foramens_list[i]
+            ma = np.max(im2)
+            mi = np.min(im2)
             im = (im - mi) / (ma - mi + 1e-8)
             imgs[name.replace("img_nodilate", "img")] = im
     return metric_rows, imgs
