@@ -291,25 +291,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    try:
-        metrics, imgs = measure_seg(
-            img=img,
-            seg=seg,
-            label=label,
-            mapping=mapping,
-        )
-    except ValueError as e:
-        print(f'ValueError: {seg_path}, {e}')
-        return
-    except KeyError as e:
-        print(f'KeyError: {seg_path}, {e}')
-        return
-    except IndexError as e:
-        print(f'IndexError: {seg_path}, {e}')
-        return
-    except Exception as e:
-        print(f'Error: {seg_path}, {e}')
-        return
+    # try:
+    metrics, imgs = measure_seg(
+        img=img,
+        seg=seg,
+        label=label,
+        mapping=mapping,
+    )
+    # except ValueError as e:
+    #     print(f'ValueError: {seg_path}, {e}')
+    #     return
+    # except KeyError as e:
+    #     print(f'KeyError: {seg_path}, {e}')
+    #     return
+    # except IndexError as e:
+    #     print(f'IndexError: {seg_path}, {e}')
+    #     return
+    # except Exception as e:
+    #     print(f'Error: {seg_path}, {e}')
+    #     return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -815,17 +815,18 @@ def measure_csf(img_data, seg_csf_data, centerline, spine_centerline):
         # Extract csf slice
         shape = straightened_csf[:, :, iz].shape
         slice_csf = straightened_csf[:, :, iz].astype(bool)
-
+        dilated_edge_slice_csf = (fastest_dilation_edt(slice_csf.astype(int), radius=3) * (1-slice_csf)).astype(bool)
+        
         # Extract side csf slice
-        min_index = np.min(np.where(slice_csf>0)[0])
-        max_index = np.max(np.where(slice_csf>0)[0])
+        min_index = np.min(np.where(dilated_edge_slice_csf>0)[0])
+        max_index = np.max(np.where(dilated_edge_slice_csf>0)[0])
         right_slice = np.zeros(shape)
         right_index = min_index + (max_index-min_index)//4
-        right_slice[:right_index+1, :] = slice_csf[:right_index+1, :]
+        right_slice[:right_index+1, :] = dilated_edge_slice_csf[:right_index+1, :]
         
         left_slice = np.zeros(shape)
         left_index = max_index - (max_index-min_index)//4
-        left_slice[left_index:, :] = slice_csf[left_index:, :]
+        left_slice[left_index:, :] = dilated_edge_slice_csf[left_index:, :]
 
         # Extract images values using segmentation
         slice_values = straightened_image[:, :, iz][slice_csf]
