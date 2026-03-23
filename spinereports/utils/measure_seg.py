@@ -291,25 +291,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    # try:
-    metrics, imgs = measure_seg(
-        img=img,
-        seg=seg,
-        label=label,
-        mapping=mapping,
-    )
-    # except ValueError as e:
-    #     print(f'ValueError: {seg_path}, {e}')
-    #     return
-    # except KeyError as e:
-    #     print(f'KeyError: {seg_path}, {e}')
-    #     return
-    # except IndexError as e:
-    #     print(f'IndexError: {seg_path}, {e}')
-    #     return
-    # except Exception as e:
-    #     print(f'Error: {seg_path}, {e}')
-    #     return
+    try:
+        metrics, imgs = measure_seg(
+            img=img,
+            seg=seg,
+            label=label,
+            mapping=mapping,
+        )
+    except ValueError as e:
+        print(f'ValueError: {seg_path}, {e}')
+        return
+    except KeyError as e:
+        print(f'KeyError: {seg_path}, {e}')
+        return
+    except IndexError as e:
+        print(f'IndexError: {seg_path}, {e}')
+        return
+    except Exception as e:
+        print(f'Error: {seg_path}, {e}')
+        return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -1517,8 +1517,8 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
 def compute_foramen_compression_ratio(metric_rows, imgs):
     foramens_list = [v for k,v in imgs.items() if k.startswith("foramens") and k.endswith("img_nodilate")]
     foramens_name = [k for k,v in imgs.items() if k.startswith("foramens") and k.endswith("img_nodilate")]
-    min_signal_list = [np.percentile(foramen_img[foramen_img!=0], 30) if np.sum(foramen_img) > 0 else 0 for foramen_img in foramens_list]
-    min_signal = np.median(min_signal_list)
+    median_signal_list = [np.percentile(foramen_img[foramen_img!=0], 50) if np.sum(foramen_img) > 0 else 0 for foramen_img in foramens_list]
+    min_signal = np.percentile(median_signal_list, 80)
     compression_ratio = [(foramen_img>min_signal).sum()/(foramen_img!=0).sum() if np.sum(foramen_img) > 0 else 1 for foramen_img in foramens_list]
     rows_name = [row['name'] for row in metric_rows]
     for i, name in enumerate(foramens_name):
@@ -1775,9 +1775,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-088_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-088_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-088_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-271_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-271_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-271_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
