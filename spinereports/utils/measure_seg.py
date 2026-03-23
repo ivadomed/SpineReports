@@ -815,7 +815,7 @@ def measure_csf(img_data, seg_csf_data, centerline, spine_centerline):
         # Extract csf slice
         shape = straightened_csf[:, :, iz].shape
         slice_csf = straightened_csf[:, :, iz].astype(bool)
-        dilated_edge_slice_csf = (fastest_dilation_edt(slice_csf.astype(int), radius=3) * (1-slice_csf)).astype(bool)
+        dilated_edge_slice_csf = (fastest_dilation_edt(slice_csf.astype(int), radius=2)).astype(bool)
         
         # Extract side csf slice
         min_index = np.min(np.where(dilated_edge_slice_csf>0)[0])
