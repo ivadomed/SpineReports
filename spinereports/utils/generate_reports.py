@@ -921,7 +921,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             'vertebrae': ['median_thickness', 'AP_thickness', 'volume'],
             'foramens': ['right_surface', 'left_surface', 'asymmetry_R-L'],
             'canal': ['area', 'diameter_AP', 'diameter_RL', 'eccentricity', 'solidity'],
-            'csf': ['slice_signal']
+            'csf': ['slice_signal', 'right_slice_signal', 'left_slice_signal']
         }
 
     # Prepare output subfolders
