@@ -1364,14 +1364,14 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
                 foramens_areas[side] = foramen_area
                 
                 # Flip the foraminal image upside-down for better visual
-                img = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
+                img = foramen_bin + foramen_mask.astype(int)
 
                 # Remove padding
                 img_padding = padding - 5
                 foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
             else:
                 foramens_areas[side] = -1
-                img = np.flipud(foramen_bin)
+                img = foramen_bin
                 # Remove padding
                 img_padding = padding - 5
                 foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
@@ -1409,14 +1409,14 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
                 foramens_areas[side] = foramen_area
                 
                 # Flip the foraminal image upside-down for better visual
-                img = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
+                img = foramen_bin + foramen_mask.astype(int)
 
                 # Remove padding
                 img_padding = padding - 5
                 foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
             else:
                 foramens_areas[side] = -1
-                img = np.flipud(foramen_bin)
+                img = foramen_bin
                 # Remove padding
                 img_padding = padding - 5
                 foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
@@ -1498,7 +1498,7 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
         # compression_fraction = np.argwhere(img_slice>=low_signal).shape[0]/nonzero.shape[0]
         # im = (im - mi) / (ma - mi + 1e-8)
         crop_size = (np.min(nonzero[:,0]), np.max(nonzero[:,0]), np.min(nonzero[:,1]), np.max(nonzero[:,1]))
-        im = np.flipud(img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]])
+        im = img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]]
         shape = foramens_img[side].shape
         foramens_img[side][shape[0]//2-im.shape[0]//2:shape[0]//2+im.shape[0]-im.shape[0]//2, shape[1]//2-im.shape[1]//2:shape[1]//2+im.shape[1]-im.shape[1]//2] = im
         
@@ -1509,7 +1509,7 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
         # compression_fraction = np.argwhere(img_slice>=low_signal).shape[0]/nonzero.shape[0]
         # im = (im - mi) / (ma - mi + 1e-8)
         crop_size = (np.min(nonzero[:,0]), np.max(nonzero[:,0]), np.min(nonzero[:,1]), np.max(nonzero[:,1]))
-        im = np.flipud(img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]])
+        im = img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]]
         shape = foramens_img_nodilate[side].shape
         foramens_img_nodilate[side][shape[0]//2-im.shape[0]//2:shape[0]//2+im.shape[0]-im.shape[0]//2, shape[1]//2-im.shape[1]//2:shape[1]//2+im.shape[1]-im.shape[1]//2] = im
     return foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate
