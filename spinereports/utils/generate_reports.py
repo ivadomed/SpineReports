@@ -185,12 +185,6 @@ def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str,
     pdf.savefig(fig)
     plt.close(fig)
 
-
-def _save_individual_figure(fig: plt.Figure, images_dir: Path, stem: str):
-    images_dir.mkdir(parents=True, exist_ok=True)
-    # Vector version (best quality for plots/text)
-    fig.savefig(str(images_dir / f"{stem}.pdf"), bbox_inches='tight')
-
 def main():
     # Description and arguments
     parser = argparse.ArgumentParser(
@@ -385,7 +379,8 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
         chunksize=1,
         disable=quiet,
     )
-    # create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
+    # index = 1
+    # create_figures(test_sub_folders[index], imgs_paths[index], ofolder_subjects[index], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
     # Load spinereports resources path
@@ -925,9 +920,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
         }
 
     # Prepare output subfolders
-    images_dir = Path(ofolder_path) / 'images'
     files_dir = Path(ofolder_path) / 'files'
-    images_dir.mkdir(parents=True, exist_ok=True)
     files_dir.mkdir(parents=True, exist_ok=True)
 
     # Save subject_data in csv file
@@ -1085,7 +1078,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
                 _apply_report_grid_layout(fig, scale=scale, rotated_xticks=False)
                 pdf.savefig(fig)
-                _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
                 plt.close(fig)
 
             # Create vertebrae, foramens figures
@@ -1210,7 +1202,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
             _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
 
             # Create discs figures
@@ -1327,7 +1318,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
             _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
         
             struc = 'vertebrae'
@@ -1438,7 +1428,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
             _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
 
 def generate_pdf(subject_name, group, subject_img, figures_path, out_path):
