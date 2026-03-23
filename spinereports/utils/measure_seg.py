@@ -291,25 +291,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    # try:
-    metrics, imgs = measure_seg(
-        img=img,
-        seg=seg,
-        label=label,
-        mapping=mapping,
-    )
-    # except ValueError as e:
-    #     print(f'ValueError: {seg_path}, {e}')
-    #     return
-    # except KeyError as e:
-    #     print(f'KeyError: {seg_path}, {e}')
-    #     return
-    # except IndexError as e:
-    #     print(f'IndexError: {seg_path}, {e}')
-    #     return
-    # except Exception as e:
-    #     print(f'Error: {seg_path}, {e}')
-    #     return
+    try:
+        metrics, imgs = measure_seg(
+            img=img,
+            seg=seg,
+            label=label,
+            mapping=mapping,
+        )
+    except ValueError as e:
+        print(f'ValueError: {seg_path}, {e}')
+        return
+    except KeyError as e:
+        print(f'KeyError: {seg_path}, {e}')
+        return
+    except IndexError as e:
+        print(f'IndexError: {seg_path}, {e}')
+        return
+    except Exception as e:
+        print(f'Error: {seg_path}, {e}')
+        return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -541,6 +541,10 @@ def measure_seg(img, seg, label, mapping):
 
     # Compute metrics onto foramens
     foramens_rows = []
+    radius = 60 # mm, radius of the straightened patch to extract around the centerline
+    straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
+    straightened_canal = ndimage.map_coordinates(seg_canal.data, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_image = ndimage.map_coordinates(img.data, straightened_coordinates, order=1, mode='grid-constant')
     for i, struc in enumerate(body_dict.keys()):
         vert_value = int(struc[1:])
         if struc.startswith('C'):
@@ -591,7 +595,7 @@ def measure_seg(img, seg, label, mapping):
             continue
 
         # Compute foramens properties
-        foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate = measure_foramens(foramens_name=foramens_name, img_data=img.data, seg_foramen_data=seg_foramen_data, seg_body_foramen_data=seg_body_foramen_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, spine_centerline=spine_centerline, pr=pr)
+        foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate = measure_foramens(foramens_name=foramens_name, straightened_coordinates=straightened_coordinates, straightened_image=straightened_image, seg_foramen_data=seg_foramen_data, seg_body_foramen_data=seg_body_foramen_data, straightened_canal=straightened_canal, pr=pr)
     
         # Save images
         for side,im in foramens_seg.items():
@@ -1121,7 +1125,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
     return properties, img_dict, body_array, True
 
-def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_body_foramen_data, seg_canal_data, canal_centerline, spine_centerline, pr):
+def measure_foramens(foramens_name, straightened_coordinates, straightened_image, seg_foramen_data, seg_body_foramen_data, straightened_canal, pr):
     '''
     This function measures the surface of the left and right neural foramen formed by 2 vertebrae and a disc
 
@@ -1140,13 +1144,9 @@ def measure_foramens(foramens_name, img_data, seg_foramen_data, seg_body_foramen
         foramens_imgs:
             left and right image of the foramina
     '''
-    radius = 60 # mm, radius of the straightened patch to extract around the centerline
-    straightened_coordinates, first_z_index = straighten_coordinates(canal_centerline, spine_centerline, radius=radius)
     straightened_foramen = ndimage.map_coordinates((seg_foramen_data>0).astype(int), straightened_coordinates, order=1, mode='grid-constant')
     straightened_disc= ndimage.map_coordinates((seg_foramen_data==2).astype(int), straightened_coordinates, order=1, mode='grid-constant')
-    straightened_body_foramen = ndimage.map_coordinates(seg_body_foramen_data, straightened_coordinates, order=1, mode='grid-constant')  
-    straightened_canal = ndimage.map_coordinates(seg_canal_data, straightened_coordinates, order=1, mode='grid-constant')
-    straightened_image = ndimage.map_coordinates(img_data, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_body_foramen = ndimage.map_coordinates(seg_body_foramen_data, straightened_coordinates, order=1, mode='grid-constant')
 
     # Extract vertebrae and disc coords
     foramens_coords = np.argwhere(straightened_foramen > 0)
@@ -1774,9 +1774,9 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-088_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-088_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-088_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
