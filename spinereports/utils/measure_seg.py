@@ -821,11 +821,11 @@ def measure_csf(img_data, seg_csf_data, centerline, spine_centerline):
         min_index = np.min(np.where(dilated_edge_slice_csf>0)[0])
         max_index = np.max(np.where(dilated_edge_slice_csf>0)[0])
         right_slice = np.zeros(shape)
-        right_index = min_index + (max_index-min_index)//4
+        right_index = min_index + (max_index-min_index)//10
         right_slice[:right_index+1, :] = dilated_edge_slice_csf[:right_index+1, :]
         
         left_slice = np.zeros(shape)
-        left_index = max_index - (max_index-min_index)//4
+        left_index = max_index - (max_index-min_index)//10
         left_slice[left_index:, :] = dilated_edge_slice_csf[left_index:, :]
 
         # Extract images values using segmentation
