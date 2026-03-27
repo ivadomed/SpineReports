@@ -1430,7 +1430,7 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
 
         # Remove max padding
         foramen_mask_no_pad = foramen_mask[padding:-padding, padding:-padding]
-        foramen_mask_no_pad_dilate = fastest_dilation_edt(foramen_mask_no_pad, radius=10)
+        foramen_mask_no_pad_dilate = fastest_dilation_edt(foramen_mask_no_pad, radius=20)
         foramen_mask_3d_dilate = np.array([foramen_mask_no_pad_dilate]*straightened_image.shape[0])
         foramen_mask_3d_nodilate = np.array([foramen_mask_no_pad]*straightened_image.shape[0])
 

@@ -1142,7 +1142,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
                 axes[idx+1].imshow(seg)
                 axes[idx+1].set_axis_off()
-                axes[idx+2].imshow(img)
+                axes[idx+2].imshow(img, cmap='gray')
                 axes[idx+2].set_axis_off()
                 idx += 3
                 for metric in metrics:
