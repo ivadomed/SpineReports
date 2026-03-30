@@ -185,12 +185,6 @@ def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str,
     pdf.savefig(fig)
     plt.close(fig)
 
-
-def _save_individual_figure(fig: plt.Figure, images_dir: Path, stem: str):
-    images_dir.mkdir(parents=True, exist_ok=True)
-    # Vector version (best quality for plots/text)
-    fig.savefig(str(images_dir / f"{stem}.pdf"), bbox_inches='tight')
-
 def main():
     # Description and arguments
     parser = argparse.ArgumentParser(
@@ -321,7 +315,7 @@ def generate_reports(
                 for metric in control_data[struc][struc_name].keys():
                     # Add subject to all_values
                     subject_value = control_data[struc][struc_name][metric]
-                    if subject_value != -1:
+                    if (isinstance(subject_value, list) and np.isin(['disc_level', 'centerline_distance'], np.array(list(control_data['canal']['canal'].keys()))).all()) or isinstance(subject_value, (int, float)) and subject_value != -1:
                         if struc not in all_values['all']:
                             all_values['all'][struc] = {}
                         if struc_name not in all_values['all'][struc]:
@@ -385,7 +379,8 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
         chunksize=1,
         disable=quiet,
     )
-    #create_figures(test_sub_folders[0], imgs_paths[0], ofolder_subjects[0], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
+    # index = 1
+    # create_figures(test_sub_folders[index], imgs_paths[index], ofolder_subjects[index], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
     # Load spinereports resources path
@@ -467,14 +462,15 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
     for struc in ['canal', 'csf']:
         for struc_name in subject_data[struc].keys():
             for metric in subject_data[struc][struc_name].keys():
-                if metric in ['slice_nb', 'disc_level']:
+                if metric in ['slice_nb', 'disc_level', 'centerline_distance']:
                     continue
-                interp_values, slice_interp = rescale_with_discs(subject_data[struc][struc_name]['disc_level'], subject_data[struc][struc_name][metric], rev_mapping, discs_gap, last_disc)
+                interp_values, slice_interp = rescale_with_discs(subject_data[struc][struc_name]['disc_level'], subject_data[struc][struc_name]['centerline_distance'], subject_data[struc][struc_name][metric], rev_mapping, discs_gap, last_disc)
                 interp_data[struc][struc_name][metric] = interp_values
             interp_data[struc][struc_name]['slice_interp'] = slice_interp
             # remove slice_nb and disc_level from dict
             interp_data[struc][struc_name].pop('slice_nb', None)
             interp_data[struc][struc_name].pop('disc_level', None)
+            interp_data[struc][struc_name].pop('centerline_distance', None)
 
     # Create figures    
     ofolder_subject.mkdir(parents=True, exist_ok=True)
@@ -621,7 +617,7 @@ def process_canal(subject_data):
     
     # Create spinalcord/canal quotient
     for key in canal_dict['spinalcord'].keys():
-        if not key in ['slice_nb', 'disc_level']:
+        if not key in ['slice_nb', 'disc_level', 'centerline_distance']:
             canal_dict['spinalcord/canal'][key] = []
             for i in range(len(canal_dict['spinalcord'][key])):
                 canal_value = canal_dict['canal'][key][i]
@@ -690,6 +686,7 @@ def rescale_canal(all_values, rev_mapping):
     struc_name = 'canal'
     # Align all metrics for each subject using discs level as references
     disc_levels = all_values['all'][struc][struc_name]['disc_level']
+    centerline_distances = all_values['all'][struc][struc_name]['centerline_distance']
     # Flatten the list of arrays and concatenate all unique values
     all_discs = np.unique(np.concatenate([np.unique(dl) for dl in disc_levels]))
     all_discs = all_discs[~np.isnan(all_discs)]
@@ -697,27 +694,39 @@ def rescale_canal(all_values, rev_mapping):
     # For each subject count slices between discs
     n_subjects = len(disc_levels)
     gap_dict = {}
+    exclude_list = []
     for subj_idx in range(n_subjects):
         subj_disc_level = np.array(disc_levels[subj_idx])            
         subj_valid = ~pd.isna(subj_disc_level)
         subj_disc_positions = np.where(subj_valid)[0]
         subj_disc_values = subj_disc_level[subj_valid]
+        subj_centerline_distances = np.array(centerline_distances[subj_idx])
 
-        # If the number of discs doesn't match, skip this subject
+        # If too few discs appear, skip this subject
         if len(subj_disc_values) < 2:
+            exclude_list.append(subj_idx)
             continue
         
+        # Ensure there is no problem with disc labeling
+        disc_list_noerror = np.array(list(range(np.max(subj_disc_values).astype(int), np.min(subj_disc_values).astype(int)-1, -1)))
+        if len(subj_disc_values) != len(disc_list_noerror):
+            exclude_list.append(subj_idx)
+            continue
+        if not (subj_disc_values == disc_list_noerror).all():
+            exclude_list.append(subj_idx)
+            continue
+
         # Create dict with number of slice between discs
         previous_disc = subj_disc_values[0]
         previous_pos = subj_disc_positions[0]
         for pos, disc in zip(subj_disc_positions[1:], subj_disc_values[1:]):
             if f"{previous_disc}-{disc}" not in gap_dict:
                 gap_dict[f"{previous_disc}-{disc}"] = []
-            gap_dict[f"{previous_disc}-{disc}"].append(pos - previous_pos)
+            gap_dict[f"{previous_disc}-{disc}"].append(subj_centerline_distances[pos] - subj_centerline_distances[previous_pos])
             previous_disc = disc
             previous_pos = pos
 
-    # Pick max for each gap between discs in gap_dict
+    # Pick median for each gap between discs in gap_dict
     gap_list = []
     discs_list = []
     for k, v in gap_dict.items():
@@ -728,19 +737,25 @@ def rescale_canal(all_values, rev_mapping):
     discs_gap = int(round(np.median(gap_list)))
     last_disc = rev_mapping[max(discs_list)]
 
+    # Rescale canal and CSF metrics for each subject using discs
     for key in all_values.keys():
         for struc in ['canal', 'csf']:
             for struc_name in all_values[key][struc].keys():
                 # Rescale subjects
                 add_slice_interp = True
                 for metric in all_values[key][struc][struc_name].keys():
-                    if metric in ['slice_nb', 'disc_level']:
+                    if metric in ['slice_nb', 'disc_level', 'centerline_distance']:
                         continue
                     for subj_idx in range(len(all_values[key][struc][struc_name][metric])):
-                        try:
-                            interp_values, slice_interp = rescale_with_discs(all_values[key][struc][struc_name]['disc_level'][subj_idx], all_values[key][struc][struc_name][metric][subj_idx], rev_mapping, discs_gap, last_disc)
-                        except TypeError as e:
-                            print(f"Error rescaling subject {subj_idx} for {struc_name} metric {metric}: {e}")
+                        if not subj_idx in exclude_list:
+                            try:
+                                interp_values, slice_interp = rescale_with_discs(all_values[key][struc][struc_name]['disc_level'][subj_idx], all_values['all'][struc][struc_name]['centerline_distance'][subj_idx], all_values[key][struc][struc_name][metric][subj_idx], rev_mapping, discs_gap, last_disc)
+                            except TypeError as e:
+                                print(f"Error rescaling subject {subj_idx} for {struc_name} metric {metric}: {e}")
+                                interp_values = []
+                                slice_interp = []
+                        else:
+                            # Exclude subject with error in disc labeling
                             interp_values = []
                             slice_interp = []
                         new_values[key][struc][struc_name][metric][subj_idx] = interp_values
@@ -752,15 +767,17 @@ def rescale_canal(all_values, rev_mapping):
                 # Remove slice_nb and disc_level from dict
                 new_values[key][struc][struc_name].pop('slice_nb', None)
                 new_values[key][struc][struc_name].pop('disc_level', None)
-
+                new_values[key][struc][struc_name].pop('centerline_distance', None)
+    
     return new_values, discs_gap, last_disc
 
-def rescale_with_discs(disc_levels, metric_list, rev_mapping, gap, last_disc):
+def rescale_with_discs(disc_levels, centerline_distances, metric_list, rev_mapping, gap, last_disc):
     '''
     Return rescaled metric values and corresponding slice indices using disc levels and gap information.
     '''
     # Rescale data for each metric
     subj_disc_level = np.array(disc_levels)
+    subj_centerline_distances = np.array(centerline_distances)
     subj_valid = ~pd.isna(subj_disc_level)
     subj_disc_positions = np.where(subj_valid)[0]
     subj_disc_values = subj_disc_level[subj_valid]
@@ -776,7 +793,8 @@ def rescale_with_discs(disc_levels, metric_list, rev_mapping, gap, last_disc):
     for disc_idx, disc in enumerate(subj_disc_values):
         if disc_idx < len(subj_disc_values) - 1:
             yp = values[subj_disc_positions[disc_idx]:subj_disc_positions[disc_idx+1]]
-            xp = np.linspace(0, gap-1, len(yp))
+            xp = subj_centerline_distances[subj_disc_positions[disc_idx]:subj_disc_positions[disc_idx+1]]
+            xp -= np.min(xp)
             x = np.linspace(0, gap-1, gap)
             if not -1 in yp:
                 if yp.size > 0:
@@ -898,13 +916,11 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             'vertebrae': ['median_thickness', 'AP_thickness', 'volume'],
             'foramens': ['right_surface', 'left_surface', 'asymmetry_R-L'],
             'canal': ['area', 'diameter_AP', 'diameter_RL', 'eccentricity', 'solidity'],
-            'csf': ['slice_signal']
+            'csf': ['slice_signal', 'right_slice_signal', 'left_slice_signal']
         }
 
     # Prepare output subfolders
-    images_dir = Path(ofolder_path) / 'images'
     files_dir = Path(ofolder_path) / 'files'
-    images_dir.mkdir(parents=True, exist_ok=True)
     files_dir.mkdir(parents=True, exist_ok=True)
 
     # Save subject_data in csv file
@@ -973,7 +989,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 subject_img=str(imgs_path / 'raw_and_seg_overlay.png'),
             )
 
-            for struc in ['canal', 'csf']:
+            for struc in ['canal']:
                 # Create a subplot for each subject and overlay a red line corresponding to their value
                 struc_names = np.array(list(subject_data[struc].keys()))
                 struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
@@ -1062,7 +1078,101 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
                 _apply_report_grid_layout(fig, scale=scale, rotated_xticks=False)
                 pdf.savefig(fig)
-                _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
+                plt.close(fig)
+            
+            for struc in ['csf']:
+                # Create a subplot for each subject and overlay a red line corresponding to their value
+                struc_names = np.array(list(subject_data[struc].keys()))
+                struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
+                metrics = metrics_dict[struc]
+                nrows = len(struc_names) + 1 + 2  # Add 2 empty rows for aspect ratio
+                ncols = len(metrics) + 1
+                scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
+                header_fs = _fs(45, scale, min_fs=12, max_fs=90)
+                tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
+                suptitle_fs = _fs(120, scale, min_fs=14, max_fs=150)
+                canal_tick_fs = _fs(18, scale, min_fs=10, max_fs=80)
+                fig, axes = plt.subplots(nrows, ncols, figsize=page_size)
+                axes = axes.flatten()
+                idx = 0
+                for i in range(ncols):
+                    if i == 0:
+                        axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                    else:
+                        if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')):
+                            # Load image 
+                            img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 1]}.jpg')
+                            axes[i].imshow(plt.imread(img_path))
+                        else:
+                            axes[i].text(0.5, 0.5, metrics[i-1].replace('slice_signal', 'signal').replace('_', ' '), fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                    axes[i].set_axis_off()
+                    idx += 1
+                for struc_name in struc_names:
+                    axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
+                    axes[idx].set_axis_off()
+                    idx += 1
+                    for metric in metrics:
+                        ax = axes[idx]
+                        if metric in subject_data[struc][struc_name]:
+                            y_subject = subject_data[struc][struc_name][metric]
+                            x_subject = subject_data[struc][struc_name]['slice_interp']
+
+                            # Keep lines with metrics line equal to metric
+                            all_values_data = all_values_df[group][struc][struc_name][metric]
+                            
+                            # Use seaborn line plot
+                            sns.lineplot(x='slice_interp', y='values', data=all_values_data, ax=ax, errorbar='sd', color='gray')
+
+                            # Plot subject
+                            ax.plot(x_subject, y_subject, color='red', linewidth=2)
+
+                            # Larger/more readable ticks for canal
+                            tick_len = float(np.clip(6.0 * scale, 3.0, 12.0))
+                            tick_w = float(np.clip(1.2 * scale, 0.8, 2.5))
+                            ax.tick_params(axis='both', labelsize=canal_tick_fs, length=tick_len, width=tick_w, pad=2)
+                            ax.xaxis.set_major_locator(MaxNLocator(nbins=7))
+                            ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+                            
+                            # Add vertebrae labels
+                            disc = last_disc
+                            top_pos = 0
+                            nb_discs = all_values_data['slice_interp'].max()//discs_gap
+                            # Leave some headroom for vertebra labels
+                            ax.margins(y=0.18)
+                            vertebra_label_fs = _fs(16, scale, min_fs=8, max_fs=42)
+                            dense_labels = nb_discs >= 12
+                            label_rot = 35 if dense_labels else 0
+                            label_ha = 'right' if dense_labels else 'center'
+                            for i in range(nb_discs+1):
+                                top_vert = disc.split('-')[0]
+                                ax.axvline(x=top_pos, color='gray', linestyle='--', alpha=0.5)
+                                ax.text(
+                                    top_pos + discs_gap // 2,
+                                    ax.get_ylim()[1],
+                                    top_vert,
+                                    verticalalignment='bottom',
+                                    horizontalalignment=label_ha,
+                                    rotation=label_rot,
+                                    fontsize=vertebra_label_fs,
+                                    color='black',
+                                    alpha=0.7,
+                                )
+                                top_pos += discs_gap
+                                if disc != 'C1-C2':
+                                    disc = previous_structure(disc)
+
+                            ax.set_xlabel('')
+                        else:
+                            ax.set_axis_off()
+                        idx += 1
+                
+                # Turn off remaining empty axes for CSF report
+                for remaining_idx in range(idx, len(axes)):
+                    axes[remaining_idx].set_axis_off()
+
+                fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
+                _apply_report_grid_layout(fig, scale=scale, rotated_xticks=False)
+                pdf.savefig(fig)
                 plt.close(fig)
 
             # Create vertebrae, foramens figures
@@ -1072,7 +1182,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
-            ncols = len(metrics) + 2
+            ncols = len(metrics) + 3
             scale = _font_scale_for_grid(page_size, nrows=nrows, ncols=ncols)
             header_fs = _fs(45, scale, min_fs=12, max_fs=90)
             tick_fs = _fs(25, scale, min_fs=8, max_fs=60)
@@ -1095,13 +1205,15 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                     axes[i].text(0.5, 0.5, "Structure name", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 elif i == 1:
                     axes[i].text(0.5, 0.5, "Segmentation", fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                elif i == 2:
+                    axes[i].text(0.5, 0.5, "Image", fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 else:
-                    if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 2]}.jpg')):
+                    if os.path.exists(os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 3]}.jpg')):
                         # Load image 
-                        img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 2]}.jpg')
+                        img_path = os.path.join(resources_path, f'imgs/{struc}_{metrics[i - 3]}.jpg')
                         axes[i].imshow(plt.imread(img_path))
                     else:
-                        axes[i].text(0.5, 0.5, metrics[i - 2], fontsize=header_fs, ha='center', va='center', fontweight='bold')
+                        axes[i].text(0.5, 0.5, metrics[i - 3], fontsize=header_fs, ha='center', va='center', fontweight='bold')
                 
                 axes[i].set_axis_off()
                 idx += 1
@@ -1109,18 +1221,25 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
                 img_name = f'{struc_name}'
-                img_left = plt.imread(str(imgs_path / f'{img_name}_left.png'))
-                img_right = plt.imread(str(imgs_path / f'{img_name}_right.png'))
+                seg_left = plt.imread(str(imgs_path / f'{img_name}_left_seg.png'))
+                seg_right = plt.imread(str(imgs_path / f'{img_name}_right_seg.png'))
+                img_left = plt.imread(str(imgs_path / f'{img_name}_left_img.png'))
+                img_right = plt.imread(str(imgs_path / f'{img_name}_right_img.png'))
 
                 # Concatenate images after padding to the maximal shape
-                max_height = max(img_left.shape[0], img_right.shape[0])
+                max_height = max(seg_left.shape[0], seg_right.shape[0])
+                seg_left_padded = np.pad(np.fliplr(seg_left), ((0, max_height - seg_left.shape[0]), (0, 0)), mode='constant')
+                seg_right_padded = np.pad(seg_right, ((0, max_height - seg_right.shape[0]), (0, 0)), mode='constant')
                 img_left_padded = np.pad(np.fliplr(img_left), ((0, max_height - img_left.shape[0]), (0, 0)), mode='constant')
                 img_right_padded = np.pad(img_right, ((0, max_height - img_right.shape[0]), (0, 0)), mode='constant')
+                seg = np.concatenate((seg_right_padded, seg_left_padded), axis=1)
                 img = np.concatenate((img_right_padded, img_left_padded), axis=1)
 
-                axes[idx+1].imshow(img)
+                axes[idx+1].imshow(seg)
                 axes[idx+1].set_axis_off()
-                idx += 2
+                axes[idx+2].imshow(img, cmap='gray')
+                axes[idx+2].set_axis_off()
+                idx += 3
                 for metric in metrics:
                     ax = axes[idx]
                     add_group = False
@@ -1178,7 +1297,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
             _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
 
             # Create discs figures
@@ -1295,7 +1413,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
             _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
         
             struc = 'vertebrae'
@@ -1406,7 +1523,6 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             fig.suptitle(structure_titles.get(struc, struc), fontsize=suptitle_fs, fontweight='bold', y=0.985)
             _apply_report_outer_margins(fig, scale=scale, rotated_xticks=True)
             pdf.savefig(fig)
-            _save_individual_figure(fig, images_dir, f"compared_{group}_{struc}")
             plt.close(fig)
 
 def generate_pdf(subject_name, group, subject_img, figures_path, out_path):

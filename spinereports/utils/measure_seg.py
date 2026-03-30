@@ -5,11 +5,8 @@ from tqdm.contrib.concurrent import process_map
 from functools import partial
 from pathlib import Path
 import numpy as np
-from skimage import measure, transform, io, morphology, draw
+from skimage import measure, morphology
 from scipy import ndimage as ndi
-import math
-from scipy import interpolate
-import scipy
 import platform
 import csv
 import warnings
@@ -18,12 +15,13 @@ from sklearn.mixture import GaussianMixture
 import colorsys
 
 from spinereports.utils.image import Image, resample_nib, zeros_like
-from spinereports.utils.utils import find_symmetry_vector_binary
+from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d, project_point_centerline, get_centerline, fastest_dilation_edt
 from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 
 import SimpleITK as sitk
 from scipy.spatial import ConvexHull
+from scipy import ndimage
 
 warnings.filterwarnings("ignore")
 
@@ -383,9 +381,6 @@ def measure_seg(img, seg, label, mapping):
     '''
     Compute morphometric measurements of the spinal canal, the intervertebral discs and the neural foramen
     '''
-    # Fetch discs label coordinates
-    discs_label = label.getNonZeroCoordinates(sorting='z')
-
     # Fetch unique segmentation values
     unique_seg = np.unique(seg.data)
 
@@ -401,13 +396,6 @@ def measure_seg(img, seg, label, mapping):
     # Normalize image intensity
     img.data = (img.data - np.mean(img.data)) / np.std(img.data) # Normalize with mean and std
 
-    # Create dict with z-slice and values for discs posterior tip
-    disc_slices = {}
-    for x, y, z, v in discs_label:
-        # Rescale z base on image resolution
-        z_rescaled = int(round(z * pz / pr))
-        disc_slices[z_rescaled] = v
-
     # Extract spinal canal from segmentation (CSF + SC)
     seg_canal = zeros_like(seg)
     seg_canal.data[seg.data == mapping['SC']] = 1
@@ -416,33 +404,24 @@ def measure_seg(img, seg, label, mapping):
     # Extract canal centerline
     centerline = get_centerline(seg_canal)
 
+    # Compute centerline distance
+    distance = np.array([0] + [np.linalg.norm(centerline['position'][:,i] - centerline['position'][:,i-1]) for i in range(1, centerline['position'].shape[1])]).cumsum()
+    centerline_distance = {int(centerline['position'][2, i]): distance[i] for i in range(centerline['position'].shape[1])}
+
+    # Project discs label coordinates on canal centerline
+    discs_label = np.array(label.getNonZeroCoordinates(sorting='z'))
+    proj_discs_label = [np.concatenate([np.round(project_point_centerline(centerline['position'].T, disc_label[:3])).astype(int), np.array([disc_label[-1]])]) for disc_label in discs_label]
+
+    # Create dict with z-slice and values for discs posterior tip
+    disc_slices = {}
+    for x, y, z, v in proj_discs_label:
+        # Rescale z base on image resolution
+        z_rescaled = int(round(z * pz / pr))
+        disc_slices[z_rescaled] = v
+
     # Init output dictionaries with metrics
     metrics = {}
     imgs = {}
-
-    # Measure CSF signal
-    seg_csf_data = (seg.data == mapping['CSF']).astype(int)
-    properties = measure_csf(img.data, seg_csf_data)
-    csf_signal = properties['csf_signal']
-
-    p5 = np.percentile(img.data, 5)
-    p95 = np.percentile(img.data, 95)
-    img.data = (img.data - p5) / (csf_signal - p5 + 1e-8)
-    img.data = np.clip(img.data, 0, 1)
-    csf_signal = 1.0
-
-    rows = []
-    for i, (k, v) in enumerate(properties['slice_signal'].items()):
-        row = {
-            "structure": "csf",
-            "index": i,
-            "slice_nb": k,
-            "disc_level": disc_slices[k] if k in disc_slices else None,
-            "slice_signal": v
-            }
-
-        rows.append(row)
-    metrics['csf'] = rows
     
     # Compute metrics onto vertebrae
     vertebrae_rows = []
@@ -496,7 +475,7 @@ def measure_seg(img, seg, label, mapping):
         seg_bin.data[seg.data == 50] = 1
     dilation_radius = 1.5//pr  # 1.5 mm
     seg_bin.data = binary_dilation(seg_bin.data, ball(dilation_radius)) # Dilate seg_bin to remove gap between discs and vertebrae
-    spine_centerline = get_centerline(seg_bin, smooth=500) # Smooth more than canal centerline to get a smoother spine centerline
+    spine_centerline = get_centerline(seg_bin, smooth=10000) # Smooth more than canal centerline to get a smoother spine centerline
 
     # # Show spine centerline and canal centerline
     # for i in range(3):
@@ -515,6 +494,34 @@ def measure_seg(img, seg, label, mapping):
     #     os.makedirs(f'test/canal/', exist_ok=True)
     #     cv2.imwrite(f'test/canal/projection_{i}.png', img_slice_rgb*125)
 
+    # Measure CSF signal
+    seg_csf_data = (seg.data == mapping['CSF']).astype(int)
+    properties = measure_csf(img.data, seg_csf_data, centerline, spine_centerline)
+    csf_signal = properties['csf_signal']
+    del properties['csf_signal']
+
+    p5 = np.percentile(img.data, 5)
+    p95 = np.percentile(img.data, 95)
+    img.data = (img.data - p5) / (csf_signal - p5 + 1e-8)
+    img.data = np.clip(img.data, 0, 1)
+    csf_signal = 1.0
+
+    rows = []
+    for i in range(len(properties[list(properties.keys())[0]])):
+        slice_nb = list(properties[list(properties.keys())[0]].keys())[i]
+        row = {
+            "structure": "csf",
+            "index": i,
+            "slice_nb": slice_nb,
+            "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
+            "centerline_distance": centerline_distance[slice_nb]
+            }
+        for key in properties.keys():
+            row[key] = properties[key][slice_nb]
+
+        rows.append(row)
+    metrics['csf'] = rows
+
     # Compute metrics onto canal segmentation
     properties = measure_canal(seg_canal, centerline, spine_centerline)
     rows = []
@@ -525,6 +532,7 @@ def measure_seg(img, seg, label, mapping):
             "index": i,
             "slice_nb": slice_nb,
             "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
+            "centerline_distance": centerline_distance[slice_nb],
             }
         for key in properties.keys():
             row[key] = properties[key][slice_nb]
@@ -533,6 +541,10 @@ def measure_seg(img, seg, label, mapping):
 
     # Compute metrics onto foramens
     foramens_rows = []
+    radius = 60 # mm, radius of the straightened patch to extract around the centerline
+    straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
+    straightened_canal = ndimage.map_coordinates(seg_canal.data, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_image = ndimage.map_coordinates(img.data, straightened_coordinates, order=1, mode='grid-constant')
     for i, struc in enumerate(body_dict.keys()):
         vert_value = int(struc[1:])
         if struc.startswith('C'):
@@ -554,6 +566,7 @@ def measure_seg(img, seg, label, mapping):
             foramens_name = f'foramens_{top_vert}-{bottom_vert}'
 
             # Init foramen segmentation
+            seg_body_foramen_data = np.zeros_like(seg.data).astype(int)
             if f'{top_vert}-{bottom_vert}' != 'C1-C2':
                 disc_mask = (seg.data == mapping[f'{top_vert}-{bottom_vert}'])
                 seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
@@ -563,6 +576,7 @@ def measure_seg(img, seg, label, mapping):
             # Compute vertebrae properties
             for vert in [top_vert, bottom_vert]:
                 seg_foramen_data += (seg.data == mapping[vert]).astype(int)
+                seg_body_foramen_data += body_dict[vert].astype(int)
             
         elif struc.startswith('L') and vert_value > 4 and mapping['sacrum'] in unique_seg:
             # Create foramen name
@@ -571,21 +585,28 @@ def measure_seg(img, seg, label, mapping):
             # Init foramen segmentation
             disc_mask = (seg.data == mapping[f'L5-S'])
             seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
+            seg_body_foramen_data = np.zeros_like(seg.data).astype(int)
 
             # Add vertebrae and sacrum
             seg_foramen_data += (seg.data == mapping[struc]).astype(int)
             seg_foramen_data += (seg.data == mapping["sacrum"]).astype(int) * 3  # Set sacrum value to 3
-        
+            seg_body_foramen_data += body_dict[struc].astype(int)        
         else:
             continue
 
         # Compute foramens properties
-        foramens_areas, foramens_imgs = measure_foramens(foramens_name=foramens_name, seg_foramen_data=seg_foramen_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, spine_centerline=spine_centerline, pr=pr)
+        foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate = measure_foramens(foramens_name=foramens_name, straightened_coordinates=straightened_coordinates, straightened_image=straightened_image, seg_foramen_data=seg_foramen_data, seg_body_foramen_data=seg_body_foramen_data, straightened_canal=straightened_canal, pr=pr)
     
-        # Save image
-        for side,image in foramens_imgs.items():
-            imgs[f'{foramens_name}_{side}'] = image
+        # Save images
+        for side,im in foramens_seg.items():
+            imgs[f'{foramens_name}_{side}_seg'] = im
         
+        for side,im in foramens_img.items():
+            imgs[f'{foramens_name}_{side}_img'] = im
+        
+        for side,im in foramens_img_nodilate.items():
+            imgs[f'{foramens_name}_{side}_img_nodilate'] = im
+
         # Save foramen metrics
         foramens_row = {
             "structure": "foramen",
@@ -594,7 +615,9 @@ def measure_seg(img, seg, label, mapping):
             "left_surface": foramens_areas['left']
         }
         foramens_rows.append(foramens_row)
-    metrics['foramens'] = foramens_rows
+
+    # Compute foramen compression ratio using all extracted foramens
+    metrics['foramens'], imgs = compute_foramen_compression_ratio(foramens_rows, imgs)
 
     # Compute metrics onto intervertebral discs
     rows = []
@@ -748,37 +771,89 @@ def measure_disc(img_data, seg_disc_data, centerline, csf_signal, pr):
     img_dict = {'seg':disc_seg_bgr, 'img':disc_img_bgr}
     return properties, img_dict, True
 
-def measure_csf(img_data, seg_csf_data):
+def measure_csf(img_data, seg_csf_data, centerline, spine_centerline):
     '''
     Extract signal from cerebro spinal fluid (CSF)
     '''
-    # Extract min and max index in Z direction
-    X, Y, Z = seg_csf_data.nonzero()
-    min_z_index, max_z_index = min(Z), max(Z)
-
     coords = np.argwhere(seg_csf_data > 0)
     values = np.array([img_data[c[0], c[1], c[2]] for c in coords])
 
     # Loop across z axis
     properties = {
         'slice_signal':{},
+        'left_slice_signal':{},
+        'right_slice_signal':{},
         'csf_signal': np.percentile(values, 90)
     }
-    for iz in range(min_z_index, max_z_index + 1):
-        # Extract csf coordinates in the slice
-        slice_csf = seg_csf_data[:, :, iz].astype(bool)
+    
+    # Straighten canal and spinalcord to extract metrics
+    radius = 50 # mm, radius of the straightened patch to extract around the centerline
+    straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
+    straightened_csf = ndimage.map_coordinates(seg_csf_data, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_image = ndimage.map_coordinates(img_data, straightened_coordinates, order=1, mode='grid-constant')    
+
+    # Pick longest segment with non empty slices
+    empty_slices = np.array([np.sum(straightened_csf[:, :, iz]) == 0 for iz in range(straightened_csf.shape[2])])
+    if np.all(empty_slices):
+        raise ValueError('No canal found in any slice after straightening.')
+    elif not np.any(empty_slices):
+        min_index = np.argwhere(straightened_csf>0)[:,2].min()
+        max_index = np.argwhere(straightened_csf>0)[:,2].max()
+    else:
+        empty_slices_indices = np.where(empty_slices)[0]+1
+        if not empty_slices_indices[0] == 0:
+            empty_slices_indices = np.insert(empty_slices_indices, 0, 0)
+        if not empty_slices_indices[-1] == straightened_csf.shape[-1] - 1:
+            empty_slices_indices = np.insert(empty_slices_indices, len(empty_slices_indices), straightened_csf.shape[-1] -1)
+        segments = [empty_slices_indices[i+1]-empty_slices_indices[i] for i in range(len(empty_slices_indices)-1)]
+        longest_segment_idx = np.argmax(segments)
+        min_index = empty_slices_indices[longest_segment_idx]
+        max_index = empty_slices_indices[longest_segment_idx+1]
+    
+    # Loop across the S-I slices
+    for iz in range(min_index, max_index + 1):
+        # Extract csf slice
+        shape = straightened_csf[:, :, iz].shape
+        slice_csf = straightened_csf[:, :, iz].astype(bool)
+        dilated_edge_slice_csf = (fastest_dilation_edt(slice_csf.astype(int), radius=2)).astype(bool)
+        
+        # Extract side csf slice
+        min_index = np.min(np.where(dilated_edge_slice_csf>0)[0])
+        max_index = np.max(np.where(dilated_edge_slice_csf>0)[0])
+        right_slice = np.zeros(shape)
+        right_index = min_index + (max_index-min_index)//10
+        right_slice[:right_index+1, :] = dilated_edge_slice_csf[:right_index+1, :]
+        
+        left_slice = np.zeros(shape)
+        left_index = max_index - (max_index-min_index)//10
+        left_slice[left_index:, :] = dilated_edge_slice_csf[left_index:, :]
 
         # Extract images values using segmentation
-        slice_values = img_data[:, :, iz][slice_csf]
+        slice_values = straightened_image[:, :, iz][slice_csf]
+        right_slice_values = straightened_image[:, :, iz][right_slice.astype(bool)]
+        left_slice_values = straightened_image[:, :, iz][left_slice.astype(bool)]
 
         # Extract most represented value
         if slice_values.size == 0:
             signal = 0
         else:
             signal = np.percentile(slice_values, 90)
+        
+        if right_slice_values.size == 0:
+            right_signal = 0
+        else:
+            right_signal = np.percentile(right_slice_values, 90)
+        
+        if left_slice_values.size == 0:
+            left_signal = 0
+        else:
+            left_signal = np.percentile(left_slice_values, 90)
 
         # Save values
-        properties['slice_signal'][iz] = signal/properties['csf_signal']
+        properties['slice_signal'][first_z_index+iz] = signal/properties['csf_signal']
+        properties['left_slice_signal'][first_z_index+iz] = left_signal/properties['csf_signal']
+        properties['right_slice_signal'][first_z_index+iz] = right_signal/properties['csf_signal']
+
     return properties
 
 def measure_canal(seg_canal, centerline, spine_centerline):
@@ -794,7 +869,11 @@ def measure_canal(seg_canal, centerline, spine_centerline):
     # List properties
     property_list = [
         'area_canal',
+        'right_area_canal',
+        'left_area_canal',
         'area_spinalcord',
+        'right_area_spinalcord',
+        'left_area_spinalcord',
         'diameter_AP_canal',
         'diameter_AP_spinalcord',
         'diameter_RL_canal',
@@ -802,75 +881,52 @@ def measure_canal(seg_canal, centerline, spine_centerline):
         'canal_centroid',
         'eccentricity_canal',
         'eccentricity_spinalcord',
-        'orientation',
         'solidity_canal',
         'solidity_spinalcord',
-        'angle_AP',
-        'angle_RL',
-        'length'
+        'asymmetry_canal_R_L',
+        'asymmetry_spinalcord_R_L'
     ]
-
     # Fetch dimensions from image.
     nx, ny, nz, nt, px, py, pz, pt = seg_canal.dim
 
-    # Extract min and max index in Z direction
-    deriv = {int(z_ref): centerline["derivative"][:2, index] for index, z_ref in enumerate(centerline["position"][2])}
-    pos_spine = {int(z_ref): np.round(spine_centerline["position"][:2, index]).astype(int) for index, z_ref in enumerate(spine_centerline["position"][2])}
+    # Straighten canal and spinalcord to extract metrics
+    radius = 50 # mm, radius of the straightened patch to extract around the centerline
+    canal_seg = (seg_canal.data > 0).astype(int)
+    sc_seg = (seg_canal.data == 1).astype(int)
+    straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
+    straightened_canal = ndimage.map_coordinates(canal_seg, straightened_coordinates, order=1, mode='grid-constant')
+    straightened_spinalcord = ndimage.map_coordinates(sc_seg, straightened_coordinates, order=1, mode='grid-constant')    
 
-    min_z_index = max(min(deriv.keys()), min(pos_spine.keys()))
-    max_z_index = min(max(deriv.keys()), max(pos_spine.keys()))
+    # Pick longest segment with non empty slices
+    empty_slices = np.array([np.sum(straightened_canal[:, :, iz]) == 0 for iz in range(straightened_canal.shape[2])])
+    if np.all(empty_slices):
+        raise ValueError('No canal found in any slice after straightening.')
+    elif not np.any(empty_slices):
+        min_index = np.argwhere(straightened_canal>0)[:,2].min()
+        max_index = np.argwhere(straightened_canal>0)[:,2].max()
+    else:
+        empty_slices_indices = np.where(empty_slices)[0]+1
+        if not empty_slices_indices[0] == 0:
+            empty_slices_indices = np.insert(empty_slices_indices, 0, 0)
+        if not empty_slices_indices[-1] == straightened_canal.shape[-1] - 1:
+            empty_slices_indices = np.insert(empty_slices_indices, len(empty_slices_indices), straightened_canal.shape[-1] -1)
+        segments = [empty_slices_indices[i+1]-empty_slices_indices[i] for i in range(len(empty_slices_indices)-1)]
+        longest_segment_idx = np.argmax(segments)
+        min_index = empty_slices_indices[longest_segment_idx]
+        max_index = empty_slices_indices[longest_segment_idx+1]
+    
     # Loop across the S-I slices
     shape_properties = {key: {} for key in property_list}
-    for iz in range(min_z_index, max_z_index + 1):
-        patch_canal = (seg_canal.data[:, :, iz] > 0).astype(int)
-        patch_sc = (seg_canal.data[:, :, iz] == 1).astype(int)
-        # Extract tangent vector to the centerline (i.e. its derivative)
-        tangent_vect = np.array([deriv[iz][0] * px, deriv[iz][1] * py, pz])
-        # Compute the angle about AP axis between the centerline and the normal vector to the slice
-        angle_AP_rad = math.atan2(tangent_vect[0], tangent_vect[2])
-        # Compute the angle about RL axis between the centerline and the normal vector to the slice
-        angle_RL_rad = math.atan2(tangent_vect[1], tangent_vect[2])
-        # Apply affine transformation to account for the angle between the centerline and the normal to the patch
-        tform = transform.AffineTransform(scale=(np.cos(angle_RL_rad), np.cos(angle_AP_rad)))
-        # Convert to float64, to avoid problems in image indexation causing issues when applying transform.warp
-        patch_canal = patch_canal.astype(np.float64)
-        patch_sc = patch_sc.astype(np.float64)
-        # Create a circle centered on the spine centerline
-        patch_centerline = np.zeros_like(patch_canal)
-        rr, cc = draw.disk((pos_spine[iz][0], pos_spine[iz][1]), radius=8, shape=patch_canal.shape)
-        patch_centerline[rr, cc] = 1.0
-
-        patch_canal_scaled = transform.warp(
-            patch_canal,
-            tform.inverse,
-            output_shape=patch_canal.shape,
-            order=1,
-        )
-        patch_centerline_scaled = transform.warp(
-            patch_centerline,
-            tform.inverse,
-            output_shape=patch_centerline.shape,
-            order=1,
-        )
-        patch_sc_scaled = transform.warp(
-            patch_sc,
-            tform.inverse,
-            output_shape=patch_sc.shape,
-            order=1,
-        )
+    for iz in range(min_index, max_index + 1):
         # Calculate shape metrics
-        shape_property = _properties2d(patch_canal_scaled, patch_sc_scaled, patch_centerline_scaled, [px, py])
+        shape_property = _properties2d(straightened_canal[:, :, iz], straightened_spinalcord[:, :, iz], [px, py])
 
         if shape_property is not None:
-            # Add custom fields
-            shape_property['angle_AP'] = angle_AP_rad * 180.0 / math.pi
-            shape_property['angle_RL'] = angle_RL_rad * 180.0 / math.pi
-            shape_property['length'] = pz / (np.cos(angle_AP_rad) * np.cos(angle_RL_rad))
             # Loop across properties and assign values for function output
             for property_name in property_list:
-                shape_properties[property_name][iz] = shape_property[property_name]
+                shape_properties[property_name][first_z_index+iz] = shape_property[property_name]
         else:
-            print(f'Warning: error with slice {iz}.')
+            print(f'Warning: error with slice {first_z_index+iz}.')
 
     return shape_properties
 
@@ -1070,14 +1126,16 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
     return properties, img_dict, body_array, True
 
-def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_centerline, spine_centerline, pr):
+def measure_foramens(foramens_name, straightened_coordinates, straightened_image, seg_foramen_data, seg_body_foramen_data, straightened_canal, pr):
     '''
     This function measures the surface of the left and right neural foramen formed by 2 vertebrae and a disc
 
     Parameters:
+        img_data: 3D numpy array containing the image data
         seg_foramen_data: 3D numpy array containing
             - a segmentation of the top and bottom vertebrae equal to 1
             - a segmentation of the intervertebral discs in between equal to 2
+        seg_body_foramen_data: 3D numpy array containing the segmentation of the vertebral bodies forming the foramen
         canal_centerline: python dict
         spine_centerline: python dict
 
@@ -1087,34 +1145,32 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
         foramens_imgs:
             left and right image of the foramina
     '''
+    straightened_foramen = ndimage.map_coordinates((seg_foramen_data>0).astype(int), straightened_coordinates, order=1, mode='grid-constant')
+    straightened_disc= ndimage.map_coordinates((seg_foramen_data==2).astype(int), straightened_coordinates, order=1, mode='grid-constant')
+    straightened_body_foramen = ndimage.map_coordinates(seg_body_foramen_data, straightened_coordinates, order=1, mode='grid-constant')
+
     # Extract vertebrae and disc coords
-    foramens_coords = np.argwhere(seg_foramen_data > 0)
-    canal_coords = np.argwhere(seg_canal_data > 0)
+    foramens_coords = np.argwhere(straightened_foramen > 0)
+    canal_coords = np.argwhere(straightened_canal > 0)
+    body_coords = np.argwhere(straightened_body_foramen > 0)
 
     # Extract z position (SI) of the disc center of mass
     if 2 in seg_foramen_data:
-        disc_coords = np.argwhere(seg_foramen_data == 2)
+        disc_coords = np.argwhere(straightened_disc>0)
         disc_pos = np.mean(disc_coords,axis=0)
     else:
-        disc_pos = np.mean(foramens_coords,axis=0)
+        disc_pos = np.mean(straightened_foramen,axis=0)
 
-    # Find closest point using distance to the centerline
-    canal_dist = np.linalg.norm(canal_centerline['position'].T - disc_pos, axis=1)
-    spine_dist = np.linalg.norm(spine_centerline['position'].T - disc_pos, axis=1)
-    canal_pos, canal_deriv = canal_centerline['position'][:,np.argmin(canal_dist)], canal_centerline['derivative'][:,np.argmin(canal_dist)]
-    spine_pos, spine_deriv = spine_centerline['position'][:,np.argmin(spine_dist)], spine_centerline['derivative'][:,np.argmin(spine_dist)]
-
+    shape = straightened_foramen.shape
+    canal_pos = np.array([shape[0]//2, shape[1]//2, disc_pos[2]])
     # Create vector w with canal centerline and spine centerline
-    v = canal_deriv/np.linalg.norm(canal_deriv)
-    w = spine_pos - canal_pos
-    w = w/np.linalg.norm(w)
-    w[2] = (-v[0]*w[0] - v[1]*w[1]) / (v[2]+1e-8) # Make w orthogonal to v
-    w = w/np.linalg.norm(w)
+    v = np.array([0, 0, -1])
+    w = np.array([0, 1, 0])
     
     n = np.cross(v, w) # normal vector of the plane
-    n /= np.linalg.norm(n)
     
     dot_product = np.dot(foramens_coords-canal_pos, n)
+    body_dot_product = np.dot(body_coords-canal_pos, n)
 
     # Extract foramen reference position
     if foramens_name != "foramens_C1-C2":
@@ -1123,24 +1179,94 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
     else:
         ref_pos = canal_pos + 2*w # Arbitrary position 2mm away from canal in the direction of w for C1-C2 foramens since there is no disc
 
-    # Distinguish left-from-right
-    pos_coords = dot_product>0
-    neg_coords = ~pos_coords
+    # Generate mask to extract image intensity
+    cropped_canal_mask = straightened_canal.astype(bool).astype(int).copy()
+    foramen_cube_mask = np.zeros_like(straightened_canal)
+    foramen_cube_mask[np.min(foramens_coords[:,0]):np.max(foramens_coords[:,0]), np.min(foramens_coords[:,1]):np.max(foramens_coords[:,1]), np.min(foramens_coords[:,2]):np.max(foramens_coords[:,2])] = 1
+    cropped_canal_mask[~foramen_cube_mask.astype(bool)] = 0 # Keep only canal at foramen level
+    dilated_canal_mask = fastest_dilation_edt(cropped_canal_mask, radius=20)
+    canal_dilated_coords = np.argwhere((dilated_canal_mask-cropped_canal_mask) > 0)
+    canal_dilated_values = straightened_image[canal_dilated_coords[:, 0], canal_dilated_coords[:, 1], canal_dilated_coords[:, 2]]
+    canal_dilated_proj_v = np.round(np.dot(canal_dilated_coords-canal_pos, v)).astype(int) # SI*
+    canal_dilated_proj_w = np.round(np.dot(canal_dilated_coords-canal_pos, w)).astype(int) # AP*
+    canal_dilated_proj_n = np.round(np.dot(canal_dilated_coords-canal_pos, n)).astype(int) # RL*
 
+    # Extract start index left and right foramens using body segmentation
+    max_body_index = np.max(body_dot_product)
+    min_body_index = np.min(body_dot_product)
+    index_pos = max_body_index * 0.30
+    index_neg = min_body_index * 0.30
+
+    # Select canal slice at the edge of the body segmentation
+    p = 10
+    left_canal_mask_body_edge = (canal_dilated_proj_n <=max_body_index*0.66+p) & (canal_dilated_proj_n >= max_body_index*0.66-p)
+    right_canal_mask_body_edge = (canal_dilated_proj_n <=min_body_index*0.66+p) & (canal_dilated_proj_n >= min_body_index*0.66-p)
+
+    canal_mask_dict = {"left": 
+                        [
+                           canal_dilated_proj_v[left_canal_mask_body_edge], 
+                           canal_dilated_proj_w[left_canal_mask_body_edge], 
+                           canal_dilated_proj_n[left_canal_mask_body_edge],
+                           canal_dilated_values[left_canal_mask_body_edge]
+                        ], 
+                        "right": 
+                        [
+                            canal_dilated_proj_v[right_canal_mask_body_edge], 
+                            canal_dilated_proj_w[right_canal_mask_body_edge],
+                            canal_dilated_proj_n[right_canal_mask_body_edge],
+                            canal_dilated_values[right_canal_mask_body_edge]
+                        ]
+    }
+
+    # Distinguish left-from-right
+    pos_coords = dot_product>=index_pos
+    neg_coords = dot_product<=index_neg
+
+    # if foramens_name == "foramens_L5-S":
+    #     unique_slices = np.unique(np.round(dot_product))
+    #     for sl in range(0, int(np.max(unique_slices))+1):
+    #         coords_sl = foramens_coords[(dot_product >= sl)]
+    #         x_coords = np.dot(coords_sl-canal_pos, v)
+    #         y_coords = np.dot(coords_sl-canal_pos, w)
+
+    #         if len(x_coords) == 0 or len(y_coords) == 0:
+    #             continue
+
+    #         # Center the image onto the segmentation
+    #         min_x = np.min(x_coords)
+    #         min_y = np.min(y_coords)
+    #         x_coords = x_coords - min_x
+    #         y_coords = y_coords - min_y
+            
+    #         # Round coordinates
+    #         x_coords = np.round(x_coords).astype(int)
+    #         y_coords = np.round(y_coords).astype(int)
+
+    #         # Create image
+    #         seg = np.zeros((np.max(x_coords)+1, np.max(y_coords)+1))
+    #         for x, y in zip(x_coords, y_coords):
+    #             seg[x, y]=1
+    #         os.makedirs(f'test/foramens/', exist_ok=True)
+    #         cv2.imwrite(f'test/foramens/projection_sl_{sl}.png', seg*255)
+    #     print()
+        
     # Neurological orientation (patient's left is radiological right)
     halfs = {"left": foramens_coords[pos_coords], "right":foramens_coords[neg_coords]}
 
     # Project foramens
     foramens_areas = {}
-    foramens_imgs = {}
+    foramens_seg = {}
+    foramens_img = {}
+    foramens_img_nodilate = {}
     for side, coords in halfs.items():
+        foramen_mask = None
         # Project coords in vw plane
-        x_coords = np.dot(coords, v)
-        y_coords = np.dot(coords, w)
-        canal_coords_x = np.dot(canal_coords, v)
-        canal_coords_y = np.dot(canal_coords, w)
-        ref_coord_x = np.dot(ref_pos, v)
-        ref_coord_y = np.dot(ref_pos, w)
+        x_coords = np.dot(coords-canal_pos, v)
+        y_coords = np.dot(coords-canal_pos, w)
+        canal_coords_x = np.dot(canal_coords-canal_pos, v)
+        canal_coords_y = np.dot(canal_coords-canal_pos, w)
+        ref_coord_x = np.dot(ref_pos-canal_pos, v)
+        ref_coord_y = np.dot(ref_pos-canal_pos, w)
 
         # Center the image onto the segmentation
         min_x = np.min(x_coords)
@@ -1161,13 +1287,13 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
         ref_coord_y = np.round(ref_coord_y).astype(int)
 
         # Create image
-        seg = np.zeros((np.max(x_coords), np.max(y_coords)))
+        seg = np.zeros((np.max(x_coords)+1, np.max(y_coords)+1))
         for x, y in zip(canal_coords_x, canal_coords_y):
-            if x > 0 and y > 0 and x-1 < seg.shape[0] and y-1 < seg.shape[1]:
-                seg[x-1, y-1]=2
+            if x > 0 and y > 0 and x < seg.shape[0] and y < seg.shape[1]:
+                seg[x, y]=2
         
         for x, y in zip(x_coords, y_coords):
-            seg[x-1, y-1]=1
+            seg[x, y]=1
         
         # Inverse image
         foramen_bg = morphology.remove_small_objects(~(seg==1).astype(bool), min_size=10)
@@ -1238,17 +1364,17 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_areas[side] = foramen_area
                 
                 # Flip the foraminal image upside-down for better visual
-                img = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
+                img = foramen_bin + foramen_mask.astype(int)
 
                 # Remove padding
-                padding = padding - 5
-                foramens_imgs[side] = img[padding:-padding, padding:-padding]
+                img_padding = padding - 5
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
             else:
                 foramens_areas[side] = -1
-                img = np.flipud(foramen_bin)
+                img = foramen_bin
                 # Remove padding
-                padding = padding - 5
-                foramens_imgs[side] = img[padding:-padding, padding:-padding]
+                img_padding = padding - 5
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
         else:
             foramen_masks_list = []
             for i in range(8):
@@ -1283,22 +1409,135 @@ def measure_foramens(foramens_name, seg_foramen_data, seg_canal_data, canal_cent
                 foramens_areas[side] = foramen_area
                 
                 # Flip the foraminal image upside-down for better visual
-                img = np.flipud(foramen_bin) + np.flipud(foramen_mask.astype(int))
+                img = foramen_bin + foramen_mask.astype(int)
 
                 # Remove padding
-                padding = padding - 5
-                foramens_imgs[side] = img[padding:-padding, padding:-padding]
+                img_padding = padding - 5
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
             else:
                 foramens_areas[side] = -1
-                img = np.flipud(foramen_bin)
+                img = foramen_bin
                 # Remove padding
-                padding = padding - 5
-                foramens_imgs[side] = img[padding:-padding, padding:-padding]
+                img_padding = padding - 5
+                foramens_seg[side] = img[img_padding:-img_padding, img_padding:-img_padding]
+                foramen_mask = None
+        
+        foramens_img[side] = np.zeros(foramens_seg[side].shape, dtype=np.float32)
+        foramens_img_nodilate[side] = np.zeros(foramens_seg[side].shape, dtype=np.float32)
+        ## Extract foramen intensity from extruded 2D foramen mask intersected with canal shell
+        if foramen_mask is None or np.sum(foramen_mask) == 0 or canal_dilated_coords.shape[0] == 0:
+            continue
 
-    return foramens_areas, foramens_imgs
+        # Remove max padding
+        foramen_mask_no_pad = foramen_mask[padding:-padding, padding:-padding]
+        foramen_mask_no_pad_dilate = fastest_dilation_edt(foramen_mask_no_pad, radius=20)
+        foramen_mask_3d_dilate = np.array([foramen_mask_no_pad_dilate]*straightened_image.shape[0])
+        foramen_mask_3d_nodilate = np.array([foramen_mask_no_pad]*straightened_image.shape[0])
+
+        # Extract projected mask coords
+        foramen_coords_3d_dilate = np.argwhere(foramen_mask_3d_dilate > 0)
+        foramen_coords_3d_nodilate = np.argwhere(foramen_mask_3d_nodilate > 0)
+
+        if side == "left":
+            foramen_coords_3d_dilate[:, 0] = np.round(foramen_coords_3d_dilate[:, 0]).astype(int) # n
+            foramen_coords_3d_nodilate[:, 0] = np.round(foramen_coords_3d_nodilate[:, 0]).astype(int) # n
+        else:
+            foramen_coords_3d_dilate[:, 0] = np.round(-foramen_coords_3d_dilate[:, 0]).astype(int) # n
+            foramen_coords_3d_nodilate[:, 0] = np.round(-foramen_coords_3d_nodilate[:, 0]).astype(int) # n
+        foramen_coords_3d_dilate[:, 1] = np.round(foramen_coords_3d_dilate[:, 1] + min_x).astype(int) # v
+        foramen_coords_3d_dilate[:, 2] = np.round(foramen_coords_3d_dilate[:, 2] + min_y).astype(int) # w
+        foramen_coords_3d_nodilate[:, 1] = np.round(foramen_coords_3d_nodilate[:, 1] + min_x).astype(int) # v
+        foramen_coords_3d_nodilate[:, 2] = np.round(foramen_coords_3d_nodilate[:, 2] + min_y).astype(int) # w
+
+        # Center the image onto the segmentation
+        min_v = np.min(np.concatenate([foramen_coords_3d_dilate[:, 1], canal_mask_dict[side][0]], axis=0))
+        min_w = np.min(np.concatenate([foramen_coords_3d_dilate[:, 2], canal_mask_dict[side][1]], axis=0))
+        min_n = np.min(np.concatenate([foramen_coords_3d_dilate[:, 0], canal_mask_dict[side][2]], axis=0))
+        foramen_coords_3d_dilate[:, 1] = foramen_coords_3d_dilate[:, 1] - min_v
+        foramen_coords_3d_dilate[:, 2] = foramen_coords_3d_dilate[:, 2] - min_w
+        foramen_coords_3d_dilate[:, 0] = foramen_coords_3d_dilate[:, 0] - min_n
+        foramen_coords_3d_nodilate[:, 1] = foramen_coords_3d_nodilate[:, 1] - min_v
+        foramen_coords_3d_nodilate[:, 2] = foramen_coords_3d_nodilate[:, 2] - min_w
+        foramen_coords_3d_nodilate[:, 0] = foramen_coords_3d_nodilate[:, 0] - min_n
+        canal_dilated_proj_v_side = canal_mask_dict[side][0] - min_v
+        canal_dilated_proj_w_side = canal_mask_dict[side][1] - min_w
+        canal_dilated_proj_n_side = canal_mask_dict[side][2] - min_n
+        max_v = np.max(np.concatenate([foramen_coords_3d_dilate[:, 1], canal_dilated_proj_v_side], axis=0)) # SI
+        max_w = np.max(np.concatenate([foramen_coords_3d_dilate[:, 2], canal_dilated_proj_w_side], axis=0)) # AP
+        max_n = np.max(np.concatenate([foramen_coords_3d_dilate[:, 0], canal_dilated_proj_n_side], axis=0)) # RL
+
+        seg_3d_foramen_dilate = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.uint8) # RL, AP, SI
+        for x, y, z in zip(foramen_coords_3d_dilate[:, 0], foramen_coords_3d_dilate[:, 1], foramen_coords_3d_dilate[:, 2]):
+            if x > 0 and y > 0 and x < seg_3d_foramen_dilate.shape[0] and y < seg_3d_foramen_dilate.shape[1] and z < seg_3d_foramen_dilate.shape[2]:
+                seg_3d_foramen_dilate[x, y, z] = 1
+        
+        seg_3d_foramen_nodilate = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.uint8) # RL, AP, SI
+        for x, y, z in zip(foramen_coords_3d_nodilate[:, 0], foramen_coords_3d_nodilate[:, 1], foramen_coords_3d_nodilate[:, 2]):
+            if x > 0 and y > 0 and x < seg_3d_foramen_nodilate.shape[0] and y < seg_3d_foramen_nodilate.shape[1] and z < seg_3d_foramen_nodilate.shape[2]:
+                seg_3d_foramen_nodilate[x, y, z] = 1
+        
+        seg_3d_canal = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.float32) # RL, AP, SI
+        img_3d_foramen = np.zeros((max_n+1, max_v+1, max_w+1), dtype=np.float32) # RL, AP, SI
+        for val, x, y, z in zip(canal_mask_dict[side][3], canal_dilated_proj_n_side, canal_dilated_proj_v_side, canal_dilated_proj_w_side):
+            if x > 0 and y > 0 and x < seg_3d_canal.shape[0] and y < seg_3d_canal.shape[1] and z < seg_3d_canal.shape[2]:
+                seg_3d_canal[x, y, z] = 1
+                img_3d_foramen[x, y, z] = val
+
+        mask_intersection_dilate = seg_3d_foramen_dilate * seg_3d_canal
+        mask_intersection_nodilate = seg_3d_foramen_nodilate * seg_3d_canal
+        if np.sum(mask_intersection_dilate) == 0:
+            continue
+        img_3d_foramen_intersection_dilate = img_3d_foramen * mask_intersection_dilate
+        img_3d_foramen_intersection_nodilate = img_3d_foramen * mask_intersection_nodilate
+        median_idx = int(np.median(np.argwhere(mask_intersection_dilate!=0)[:,0]))
+        
+        # Create image of the dilated foramen
+        img_slice = img_3d_foramen_intersection_dilate[median_idx]
+        nonzero = np.argwhere(img_slice!=0)
+        # low_signal = np.percentile(inter_vals, 20)
+        # compression_fraction = np.argwhere(img_slice>=low_signal).shape[0]/nonzero.shape[0]
+        # im = (im - mi) / (ma - mi + 1e-8)
+        crop_size = (np.min(nonzero[:,0]), np.max(nonzero[:,0]), np.min(nonzero[:,1]), np.max(nonzero[:,1]))
+        im = img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]]
+        shape = foramens_img[side].shape
+        foramens_img[side][shape[0]//2-im.shape[0]//2:shape[0]//2+im.shape[0]-im.shape[0]//2, shape[1]//2-im.shape[1]//2:shape[1]//2+im.shape[1]-im.shape[1]//2] = im
+        
+        # Create image of the dilated foramen
+        img_slice = img_3d_foramen_intersection_nodilate[median_idx]
+        nonzero = np.argwhere(img_slice!=0)
+        # low_signal = np.percentile(inter_vals, 20)
+        # compression_fraction = np.argwhere(img_slice>=low_signal).shape[0]/nonzero.shape[0]
+        # im = (im - mi) / (ma - mi + 1e-8)
+        crop_size = (np.min(nonzero[:,0]), np.max(nonzero[:,0]), np.min(nonzero[:,1]), np.max(nonzero[:,1]))
+        im = img_slice[crop_size[0]:crop_size[1], crop_size[2]:crop_size[3]]
+        shape = foramens_img_nodilate[side].shape
+        foramens_img_nodilate[side][shape[0]//2-im.shape[0]//2:shape[0]//2+im.shape[0]-im.shape[0]//2, shape[1]//2-im.shape[1]//2:shape[1]//2+im.shape[1]-im.shape[1]//2] = im
+    return foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate
+
+def compute_foramen_compression_ratio(metric_rows, imgs):
+    foramens_list = [v for k,v in imgs.items() if k.startswith("foramens") and k.endswith("img_nodilate")]
+    foramens_name = [k for k,v in imgs.items() if k.startswith("foramens") and k.endswith("img_nodilate")]
+    median_signal_list = [np.percentile(foramen_img[foramen_img!=0], 50) if np.sum(foramen_img) > 0 else 0 for foramen_img in foramens_list]
+    min_signal = np.percentile(median_signal_list, 80)
+    compression_ratio = [(foramen_img>min_signal).sum()/(foramen_img!=0).sum() if np.sum(foramen_img) > 0 else 1 for foramen_img in foramens_list]
+    rows_name = [row['name'] for row in metric_rows]
+    for i, name in enumerate(foramens_name):
+        foramen_name = "_".join(name.split("_")[:2])
+        metric_row_idx = rows_name.index(foramen_name)
+        side = name.split("_")[2]
+        metric_rows[metric_row_idx][f"{side}_compression_ratio"] = compression_ratio[i]
+        # normalize foramen image for visualization
+        if np.sum(foramens_list[i]) != 0:
+            im = imgs[name.replace("img_nodilate", "img")]
+            im2 = foramens_list[i]
+            ma = np.max(im2)
+            mi = np.min(im2)
+            im = (im - mi) / (ma - mi + 1e-8)
+            imgs[name.replace("img_nodilate", "img")] = im
+    return metric_rows, imgs
 
 def foramen_confidence_score(mask, mask_list):
-    return np.sum([2*np.sum((mask * mask_i))/(np.sum(mask_i)+np.sum(mask)) > 0.60 for mask_i in mask_list])
+    return np.sum([2*np.sum((mask * mask_i))/(np.sum(mask_i)+np.sum(mask)) > 0.50 for mask_i in mask_list])
 
 def find_intensity_peaks(values):
     '''
@@ -1359,10 +1598,10 @@ def fit_ellipsoid(coords, centerline_deriv, min_size=32):
         # Build binary image
         H = ia.max()
         W = ib.max()
-        seg2d = np.zeros((H, W), dtype=bool)
+        seg2d = np.zeros((H+1, W+1), dtype=bool)
         for x, y in zip(ia, ib):
             if x > 0 and y > 0 and x-1 < H and y-1 < W:
-                seg2d[x-1, y-1] = True
+                seg2d[x, y] = True
         
         # Pad image
         seg2d = np.pad(seg2d, pad_width=5, mode='constant', constant_values=0)
@@ -1467,245 +1706,6 @@ def compute_thickness_profile(coords, rotation_matrix, bin_size=1.0):
                 thicknesses.append(max_SI-min_SI)
     return np.median(np.array(thicknesses))
 
-def get_centerline(seg, smooth=50):
-    '''
-    Based on https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/core.py
-
-    Extract centerline from canal segmentation using center of mass and interpolate with bspline
-    Expect orientation RPI
-    '''
-    arr = np.array(np.where(seg.data))
-    # Loop across SI axis and average coordinates within duplicate SI values
-    sorted_avg = []
-    for i_si in np.unique(arr[2]):
-        sorted_avg.append(arr[:, arr[2] == i_si].mean(axis=1))
-    x_mean, y_mean, z_mean = np.array(sorted_avg).T
-    z_ref = np.array(range(z_mean.min().astype(int), z_mean.max().astype(int) + 1))
-
-    # Interpolate centerline
-    px, py, pz = seg.dim[4:7]
-    x_centerline_fit, x_centerline_deriv = bspline(z_mean, x_mean, z_ref, smooth=smooth, pz=pz)
-    y_centerline_fit, y_centerline_deriv = bspline(z_mean, y_mean, z_ref, smooth=smooth, pz=pz)
-
-    # Construct output
-    arr_ctl = np.array([x_centerline_fit, y_centerline_fit, z_ref])
-    arr_ctl_der = np.array([x_centerline_deriv, y_centerline_deriv, np.ones_like(z_ref)])
-
-    # Create centerline dictionary
-    centerline = {"position": arr_ctl, "derivative": arr_ctl_der}
-    return centerline
-
-def bspline(x, y, xref, smooth, deg_bspline=3, pz=1):
-    """
-    Copied from https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/spinalcordtoolbox/centerline/curve_fitting.py
-    Bspline interpolation.
-
-    The smoothing factor (s) is calculated based on an empirical formula (made by JCA, based on
-    preliminary results) and is a function of pz, density of points and an input smoothing parameter (smooth). The
-    formula is adjusted such that the parameter (smooth) produces similar smoothing results than a Hanning window with
-    length smooth, as implemented in linear().
-
-    :param x:
-    :param y:
-    :param xref:
-    :param smooth: float: Smoothing factor. 0: no smoothing, 5: moderate smoothing, 50: large smoothing
-    :param deg_bspline: int: Degree of spline
-    :param pz: float: dimension of pixel along superior-inferior direction (z, assuming RPI orientation)
-    :return:
-    """
-    if len(x) <= deg_bspline:
-        deg_bspline -= 2
-    density = (float(len(x)) / len(xref)) ** 2
-    s = density * smooth * pz / float(3)
-    # Then, run bspline interpolation
-    tck = interpolate.splrep(x, y, s=s, k=deg_bspline)
-    y_fit = interpolate.splev(xref, tck, der=0)
-    y_fit_der = interpolate.splev(xref, tck, der=1)
-    return y_fit, y_fit_der
-
-def _properties2d(canal, spinalcord, spine_centerline, dim):
-    """
-    Compute shape property of the input 2D image. Accounts for partial volume information.
-    :param canal: 2D input canal image in uint8 or float (weighted for partial volume) that has a single object.
-    :param spinalcord: 2D input spinal cord image in uint8 or float (weighted for partial volume).
-    :param spine_centerline: 2D input spine centerline image in uint8 or float (weighted for partial volume).
-    :param dim: [px, py]: Physical dimension of the image (in mm). X,Y respectively correspond to AP,RL.
-    :return:
-    """
-    # Check if slice is empty
-    if np.all(canal < 1e-6):
-        print('The slice is empty.')
-        return None
-    
-    # Normalize between 0 and 1 (also check if slice is empty)
-    canal_norm = (canal - canal.min()) / (canal.max() - canal.min())
-
-    # Fetch spine position
-    spine_pos = np.nonzero(spine_centerline)
-    spine_pos = np.array([np.round(np.mean(spine_pos[0])), np.round(np.mean(spine_pos[1]))])
-
-    # Binarize canal using threshold at 0.5
-    canal_bin = np.array(canal_norm > 0.5, dtype='uint8')
-
-    # Extract canal slice center of mass
-    canal_coords = np.nonzero(canal_bin)
-    canal_pos = np.array([np.round(np.mean(canal_coords[0])), np.round(np.mean(canal_coords[1]))])
-
-    # Create vector v from canal_pos to spine pos and normalize it
-    v = spine_pos - canal_pos
-    v = v / np.linalg.norm(v)
-
-    # Create w an orthogonal vector to v
-    w = np.array([-v[1], v[0]])
-
-    # Compute AP diameter along v 
-    v_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=v, radius=4) # Create cylindrical mask along v
-    AP_mask = v_mask*canal_bin
-    AP_coords = np.argwhere(AP_mask)
-    projections = np.dot(AP_coords, v)  # Project onto vector
-    diameter_AP_canal = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
-
-    # Compute RL diameter along w
-    w_mask = cylindrical_mask(shape=canal_bin.shape, p0=canal_pos, v=w, radius=4) # Create cylindrical mask along w
-    RL_mask = w_mask*canal_bin
-    RL_coords = np.argwhere(RL_mask)
-    projections = np.dot(RL_coords, w)  # Project onto vector
-    diameter_RL_canal = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
-
-    # Compute area
-    area_canal = np.sum(canal_bin) * dim[0] * dim[1]
-
-    # Compute eccentricity
-    max_diameter_canal = max(diameter_AP_canal, diameter_RL_canal)
-    min_diameter_canal = min(diameter_AP_canal, diameter_RL_canal)
-    eccentricity_canal = np.sqrt(1 - min_diameter_canal**2/max_diameter_canal**2) if max_diameter_canal > 0 else 0
-
-    # Compute angle between AP and patient AP
-    u2 = np.array([0, 1])
-    angle = angle_between(u2, v) # rad
-    angle = 360*angle/(2*np.pi)
-
-    # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
-    if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
-        solidity_canal = -1
-    else:
-        solidity_canal = compute_solidity_2d(canal_bin)
-
-    # Compute spinal cord metrics if not empty else set metrics to -1
-    if not np.all(spinalcord < 1e-6):
-        # Normalize between 0 and 1 (also check if slice is empty)
-        spinalcord_norm = (spinalcord - spinalcord.min()) / (spinalcord.max() - spinalcord.min())
-
-        # Binarize canal using threshold at 0.5 Necessary input for measure.regionprops
-        spinalcord_bin = np.array(spinalcord_norm > 0.5, dtype='uint8')
-
-        # Extract spinalcord slice center of mass
-        spinalcord_coords = np.nonzero(spinalcord_bin)
-        spinalcord_pos = np.array([np.round(np.mean(spinalcord_coords[0])), np.round(np.mean(spinalcord_coords[1]))])
-
-        # Compute AP diameter along v
-        v_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=v, radius=4) # Create cylindrical mask along v
-        AP_mask = v_mask*spinalcord_bin
-        AP_coords = np.argwhere(AP_mask)
-        projections = np.dot(AP_coords, v)  # Project onto vector
-        diameter_AP_spinalcord = (projections.max() - projections.min())*dim[0] # AP length = max - min projection
-
-        # Compute RL diameter along w
-        w_mask = cylindrical_mask(shape=spinalcord_bin.shape, p0=spinalcord_pos, v=w, radius=4) # Create cylindrical mask along w
-        RL_mask = w_mask*spinalcord_bin
-        RL_coords = np.argwhere(RL_mask)
-        projections = np.dot(RL_coords, w)  # Project onto vector
-        diameter_RL_spinalcord = (projections.max() - projections.min())*dim[1] # RL length = max - min projection
-
-        # Compute area 
-        area_spinalcord = np.sum(spinalcord_bin) * dim[0] * dim[1]
-
-        # Compute eccentricity 
-        max_diameter_spinalcord = max(diameter_AP_spinalcord, diameter_RL_spinalcord)
-        min_diameter_spinalcord = min(diameter_AP_spinalcord, diameter_RL_spinalcord)
-        eccentricity_spinalcord = np.sqrt(1 - min_diameter_spinalcord**2/max_diameter_spinalcord**2) if max_diameter_spinalcord > 0 else 0
-
-        # Deal with https://github.com/spinalcordtoolbox/spinalcordtoolbox/issues/2307
-        if any(x in platform.platform() for x in ['Darwin-15', 'Darwin-16']):
-            solidity_spinalcord = -1
-        else:
-            solidity_spinalcord = compute_solidity_2d(spinalcord_bin)
-    else:
-        area_spinalcord = -1
-        diameter_AP_spinalcord = -1
-        diameter_RL_spinalcord = -1
-        eccentricity_spinalcord = -1
-        solidity_spinalcord = -1
-    
-    # Fill up dictionary
-    properties = {
-        'area_canal': area_canal,
-        'area_spinalcord': area_spinalcord,
-        'diameter_AP_canal': diameter_AP_canal,
-        'diameter_AP_spinalcord': diameter_AP_spinalcord,
-        'diameter_RL_canal': diameter_RL_canal,
-        'diameter_RL_spinalcord': diameter_RL_spinalcord,
-        'canal_centroid': canal_pos,
-        'eccentricity_canal': eccentricity_canal,
-        'eccentricity_spinalcord': eccentricity_spinalcord,
-        'orientation': angle,
-        'solidity_canal': solidity_canal,  # convexity measure
-        'solidity_spinalcord': solidity_spinalcord,  # convexity measure
-    }
-    return properties
-
-def angle_between(u, v):
-    u = np.array(u)
-    v = np.array(v)
-    dot_product = np.dot(u, v)
-    norm_u = np.linalg.norm(u)
-    norm_v = np.linalg.norm(v)
-    # Clip to avoid numerical issues (e.g. arccos(1.0000001))
-    cos_theta = np.clip(dot_product / (norm_u * norm_v), -1.0, 1.0)
-    angle = np.arccos(cos_theta)  # in radians
-    return angle
-
-def cylindrical_mask(shape, p0, v, radius):
-    """
-    Create a 2D binary mask of a 'cylinder' (thick line) along vector `v` passing through `p0`.
-    
-    Args:
-        shape (tuple): Shape of the 2D image (height, width)
-        p0 (np.array): A point [y, x] the vector passes through
-        v (np.array): Direction vector [vy, vx]
-        radius (float): Cylinder radius (in pixels)
-
-    Returns:
-        mask (2D np.array): Binary mask with True inside the cylinder
-    """
-    h, w = shape
-    Y, X = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
-    
-    # Shift grid by point
-    dy = Y - p0[0]
-    dx = X - p0[1]
-    
-    # Normalize direction vector
-    v = v / np.linalg.norm(v)
-    
-    # Compute perpendicular distance to the line (vector projection method)
-    # Distance = ||(point - p0) - ((point - p0) · v) * v||
-    dot = dx * v[1] + dy * v[0]
-    proj_x = dot * v[1]
-    proj_y = dot * v[0]
-    perp_x = dx - proj_x
-    perp_y = dy - proj_y
-    dist = np.sqrt(perp_x**2 + perp_y**2)
-    
-    # Inside mask if distance < radius
-    mask = dist < radius
-    return mask
-
-def compute_solidity_2d(mask):
-    labeled = measure.label(mask)
-    props = measure.regionprops(labeled)[0]
-    return props.solidity
-
 def crop_around_binary(volume):
     """
     Crop a 3D numpy array around the non-zero region and return the cropped size.
@@ -1775,13 +1775,13 @@ if __name__ == '__main__':
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
     # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-029_acq-sag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-029_acq-sag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-029_acq-sag_T2w.nii.gz'
+    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-271_acq-sag_T2w_0000.nii.gz'
+    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-271_acq-sag_T2w.nii.gz'
+    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-271_acq-sag_T2w.nii.gz'
     
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-098_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-098_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-098_acq-sag_T2w.nii.gz'
+    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
+    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
+    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
     
     # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
     # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
