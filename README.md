@@ -18,6 +18,10 @@ Automated extraction of spinal morphometrics and generation of structured radiol
 | :---: |
 | <img src="spinereports/resources/imgs/report_vertebrae.png" width="900"> |
 
+| Cerebro Spinal Fluid (CSF) report |
+| :---: |
+| <img src="spinereports/resources/imgs/report_csf.png" width="900"> |
+
 In these report examples:
 - The background violin plot in gray (or lineplot for the canal) corresponds to the **control group** (multiple subjects)
 - The red line in each graph and the pictures correspond to a specific subject in the **test group**. Reports are only generated for the test group.
