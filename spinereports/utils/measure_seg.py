@@ -611,8 +611,8 @@ def measure_seg(img, seg, label, mapping):
         foramens_row = {
             "structure": "foramen",
             "name": foramens_name,
-            "right_surface": foramens_areas['right'],
-            "left_surface": foramens_areas['left']
+            "right_area": foramens_areas['right'],
+            "left_area": foramens_areas['left']
         }
         foramens_rows.append(foramens_row)
 
@@ -1128,7 +1128,7 @@ def measure_vertebra(img_data, seg_vert_data, seg_canal_data, canal_centerline, 
 
 def measure_foramens(foramens_name, straightened_coordinates, straightened_image, seg_foramen_data, seg_body_foramen_data, straightened_canal, pr):
     '''
-    This function measures the surface of the left and right neural foramen formed by 2 vertebrae and a disc
+    This function measures the area of the left and right neural foramen formed by 2 vertebrae and a disc
 
     Parameters:
         img_data: 3D numpy array containing the image data
@@ -1141,7 +1141,7 @@ def measure_foramens(foramens_name, straightened_coordinates, straightened_image
 
     Returns:
         foramens_areas: python dict
-            left and right surface of the foramina (neuroligical convention, so patient's left is radiological right)
+            left and right areas of the foramina (neuroligical convention, so patient's left is radiological right)
         foramens_imgs:
             left and right image of the foramina
     '''
