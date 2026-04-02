@@ -667,8 +667,8 @@ def compute_discs_metrics(data_dict):
 def compute_foramens_metrics(data_dict):
     # Compute Foramen metrics
     for struc_name in data_dict['foramens'].keys():
-        if data_dict['foramens'][struc_name]['right_surface'] != -1 and data_dict['foramens'][struc_name]['left_surface'] != -1 and data_dict['foramens'][struc_name]['left_surface'] != 0:
-            data_dict['foramens'][struc_name]['asymmetry_R-L'] = data_dict['foramens'][struc_name]['right_surface'] / data_dict['foramens'][struc_name]['left_surface']
+        if data_dict['foramens'][struc_name]['right_area'] != -1 and data_dict['foramens'][struc_name]['left_area'] != -1 and data_dict['foramens'][struc_name]['left_area'] != 0:
+            data_dict['foramens'][struc_name]['asymmetry_R-L'] = data_dict['foramens'][struc_name]['right_area'] / data_dict['foramens'][struc_name]['left_area']
         else:
             data_dict['foramens'][struc_name]['asymmetry_R-L'] = -1
     return data_dict
@@ -914,7 +914,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
     metrics_dict = {
             'discs': ['median_thickness', 'DHI', 'volume', 'eccentricity', 'solidity'],
             'vertebrae': ['median_thickness', 'AP_thickness', 'volume'],
-            'foramens': ['right_surface', 'left_surface', 'asymmetry_R-L'],
+            'foramens': ['right_area', 'left_area', 'asymmetry_R-L'],
             'canal': ['area', 'diameter_AP', 'diameter_RL', 'eccentricity', 'solidity'],
             'csf': ['slice_signal', 'right_slice_signal', 'left_slice_signal']
         }
