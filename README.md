@@ -2,6 +2,10 @@
 
 Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
 
+| Report description |
+| :---: |
+| <img src="spinereports/resources/imgs/report_first_page.png" width="900"> | 
+
 | Canal report |
 | :---: |
 | <img src="spinereports/resources/imgs/report_canal.png" width="900"> | 
