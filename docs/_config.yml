@@ -1,0 +1,21 @@
+title: SpineReport
+description: Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
+theme: just-the-docs
+
+url: https://ivadomed.github.io/SpineReport
+
+# Enable search
+search_enabled: true
+
+# Exclude from search
+search:
+  # List the files and directories to exclude from search indexing
+  exclude:
+
+# Aux links
+aux_links:
+  Repository: https://github.com/ivadomed/SpineReport
+  Issues: https://github.com/ivadomed/SpineReport/issues
+
+# Color scheme
+color_scheme: nil
