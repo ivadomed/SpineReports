@@ -1,5 +1,5 @@
 [project]
-name = "spinereports"
+name = "spinereport"
 version = "20251023"
 requires-python = ">=3.10"
 description = "Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data."
@@ -30,16 +30,16 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/ivadomed/SpineReports"
-repository = "https://github.com/ivadomed/SpineReports"
+homepage = "https://github.com/ivadomed/SpineReport"
+repository = "https://github.com/ivadomed/SpineReport"
 
 [project.scripts]
-spinereports = "spinereports.spinereports:main"
-spinereports_plot_by_group = "spinereports.plot_by_group:main"
+spinereport = "spinereport.spinereport:main"
+spinereport_plot_by_group = "spinereport.plot_by_group:main"
 
 [build-system]
 requires = ["pip>=23", "setuptools>=67"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
-'spinereports' = ['resources/*']
+'spinereport' = ['resources/*']

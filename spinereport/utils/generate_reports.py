@@ -13,7 +13,7 @@ import json
 import copy
 from tqdm import tqdm
 import totalspineseg.resources as tss_resources
-import spinereports.resources as sr_resources
+import spinereport.resources as sr_resources
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
@@ -160,7 +160,7 @@ def _pdf_add_cover_page(pdf: PdfPages, page_size, subject_name: str, group: str,
     # Scale cover fonts with page size (relative to A4 landscape).
     base_w, base_h = 11.69, 8.27
     cover_scale = float(np.clip(min(page_size[0] / base_w, page_size[1] / base_h), 0.7, 2.2))
-    header_ax.text(0.00, 1.00, 'SpineReports', fontsize=_fs(130, cover_scale, min_fs=16, max_fs=150), fontweight='bold', ha='left', va='top')
+    header_ax.text(0.00, 1.00, 'SpineReport', fontsize=_fs(130, cover_scale, min_fs=16, max_fs=150), fontweight='bold', ha='left', va='top')
     header_ax.text(0.00, 0.60, f"Subject: {subject_name}", fontsize=_fs(100, cover_scale, min_fs=11, max_fs=110), ha='left', va='top')
     header_ax.text(0.00, 0.05, f"Reference group: {group}", fontsize=_fs(90, cover_scale, min_fs=10, max_fs=100), ha='left', va='bottom', color='gray')
     header_ax.text(1.00, 1.00, datetime.now().strftime('%Y-%m-%d %H:%M'), fontsize=_fs(100, cover_scale, min_fs=8, max_fs=110), ha='right', va='top', color='gray')
@@ -383,7 +383,7 @@ def create_figures_mp(test_path, ofolder_path, all_values, demographics_test, re
     # create_figures(test_sub_folders[index], imgs_paths[index], ofolder_subjects[index], all_values, demographics_test, rev_mapping, discs_gap, last_disc)
 
 def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demographics_test, rev_mapping, discs_gap, last_disc):
-    # Load spinereports resources path
+    # Load spinereport resources path
     resources_path = importlib.resources.files(sr_resources)
 
     # Load subject data

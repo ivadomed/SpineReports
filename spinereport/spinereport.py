@@ -6,8 +6,8 @@ import os, importlib
 
 import totalspineseg.resources as resources
 
-from spinereports.utils.generate_reports import generate_reports
-from spinereports.utils.measure_seg import measure_seg_mp
+from spinereport.utils.generate_reports import generate_reports
+from spinereport.utils.measure_seg import measure_seg_mp
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
         '''.split()),
         epilog=textwrap.dedent('''
             Examples:
-            spinereports -t test_group_folder -c control_group_folder -o reports
+            spinereport -t test_group_folder -c control_group_folder -o reports
         '''),
         formatter_class=argparse.RawTextHelpFormatter
     )
@@ -100,8 +100,8 @@ def main():
             quiet = {quiet}
         '''))
     
-    # Run spinereports
-    run_spinereports(
+    # Run spinereport
+    run_spinereport(
         test_path=test_path,
         control_path=control_path,
         ofolder=ofolder,
@@ -115,7 +115,7 @@ def main():
         quiet=quiet
     )
 
-def run_spinereports(
+def run_spinereport(
         test_path: Path,
         control_path: Path,
         ofolder: Path,

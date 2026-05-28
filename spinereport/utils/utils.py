@@ -2,7 +2,7 @@ import numpy as np
 import platform
 from skimage import measure
 from scipy.spatial import KDTree
-from spinereports.utils.image import Image, zeros_like
+from spinereport.utils.image import Image, zeros_like
 from scipy import interpolate, ndimage
 from skimage import measure, morphology
 
