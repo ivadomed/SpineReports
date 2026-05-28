@@ -1,36 +1,36 @@
-# SpineReports
+# SpineReport
 
 Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
 
 | Report description |
 | :---: |
-| <img src="spinereports/resources/imgs/report_first_page.png" width="900"> | 
+| <img src="spinereport/resources/imgs/report_first_page.png" width="900"> | 
 
 | Canal report |
 | :---: |
-| <img src="spinereports/resources/imgs/report_canal.png" width="900"> | 
+| <img src="spinereport/resources/imgs/report_canal.png" width="900"> | 
 
 | Discs report |
 | :---: |
-| <img src="spinereports/resources/imgs/report_discs.png" width="900"> |
+| <img src="spinereport/resources/imgs/report_discs.png" width="900"> |
 
 | Foramens report |
 | :---: |
-| <img src="spinereports/resources/imgs/report_foramens.png" width="900"> |
+| <img src="spinereport/resources/imgs/report_foramens.png" width="900"> |
 
 | Vertebrae report |
 | :---: |
-| <img src="spinereports/resources/imgs/report_vertebrae.png" width="900"> |
+| <img src="spinereport/resources/imgs/report_vertebrae.png" width="900"> |
 
 | Cerebro Spinal Fluid (CSF) report |
 | :---: |
-| <img src="spinereports/resources/imgs/report_csf.png" width="900"> |
+| <img src="spinereport/resources/imgs/report_csf.png" width="900"> |
 
 In these report examples:
 - The background violin plot in gray (or lineplot for the canal) corresponds to the **control group** (multiple subjects)
 - The red line in each graph and the pictures correspond to a specific subject in the **test group**. Reports are only generated for the test group.
 
-You can find an example report [here](spinereports/resources/imgs/example_report.pdf)
+You can find an example report [here](spinereport/resources/imgs/example_report.pdf)
 
 ## How to install ?
 
@@ -51,10 +51,10 @@ You can find an example report [here](spinereports/resources/imgs/example_report
 3. Install TotalSpineSeg:
    see information [here](https://github.com/neuropoly/totalspineseg#installation)
 
-4. Install SpineReports:
+4. Install SpineReport:
    ```bash
-   git clone git@github.com:ivadomed/SpineReports.git
-   cd SpineReports
+   git clone git@github.com:ivadomed/SpineReport.git
+   cd SpineReport
    pip install .
    ```
 
@@ -77,9 +77,9 @@ INPUT_FOLDER/
 totalspineseg RAW_FOLDER TOTALSPINESEG_FOLDER --iso
 ```
 
-3. Run SpineReports to generate the reports
+3. Run SpineReport to generate the reports
 ```
-spinereports -t TEST_TOTALSPINESEG_FOLDER -c CONTROL_TOTALSPINESEG_FOLDER -o reports
+spinereport -t TEST_TOTALSPINESEG_FOLDER -c CONTROL_TOTALSPINESEG_FOLDER -o reports
 ```
 
 The **test subjects** corresponds to the subjects for which a report will be generated. The **control subjects** corresponds to the violin plots shown in gray in the background (see report examples at the top of the README.). If you want to generate reports for all your subjects/scans, you can specify the same path for both **TEST_TOTALSPINESEG_FOLDER** and **CONTROL_TOTALSPINESEG_FOLDER**.
@@ -110,43 +110,43 @@ INPUT_FOLDER/
 
 3. Run this command
 ```
-spinereports_plot_by_group -i TOTALSPINESEG_FOLDER -d DEMOGRAPHICS.tsv -o group_analysis
+spinereport_plot_by_group -i TOTALSPINESEG_FOLDER -d DEMOGRAPHICS.tsv -o group_analysis
 ```
 
 ### Examples of group analysis for sex
 
 | Canal group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_canal_by_sex.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_canal_by_sex.png" width="900"> |
 
 | Discs group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_discs_by_sex.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_discs_by_sex.png" width="900"> |
 
 | Foramens group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_foramens_by_sex.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_foramens_by_sex.png" width="900"> |
 
 | Vertebrae group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_vertebrae_by_sex.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_vertebrae_by_sex.png" width="900"> |
 
 ### Examples of group analysis for age
 
 | Canal group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_canal_by_age.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_canal_by_age.png" width="900"> |
 
 | Discs group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_discs_by_age.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_discs_by_age.png" width="900"> |
 
 | Foramens group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_foramens_by_age.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_foramens_by_age.png" width="900"> |
 
 | Vertebrae group analysis |
 | :---: |
-| <img src="spinereports/resources/imgs/group_analysis_vertebrae_by_age.png" width="900"> |
+| <img src="spinereport/resources/imgs/group_analysis_vertebrae_by_age.png" width="900"> |
 
 

@@ -14,8 +14,8 @@ import cv2
 from sklearn.mixture import GaussianMixture
 import colorsys
 
-from spinereports.utils.image import Image, resample_nib, zeros_like
-from spinereports.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d, project_point_centerline, get_centerline, fastest_dilation_edt
+from spinereport.utils.image import Image, resample_nib, zeros_like
+from spinereport.utils.utils import find_symmetry_vector_binary, straighten_coordinates, _properties2d, project_point_centerline, get_centerline, fastest_dilation_edt
 from skimage.morphology import ball, binary_dilation
 import totalspineseg.resources as resources
 

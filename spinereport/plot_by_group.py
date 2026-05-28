@@ -12,7 +12,7 @@ import importlib
 import multiprocessing as mp
 
 import totalspineseg.resources as resources
-from spinereports.utils.measure_seg import measure_seg_mp
+from spinereport.utils.measure_seg import measure_seg_mp
 
 def main():
     # Description and arguments
@@ -23,7 +23,7 @@ def main():
         '''.split()),
         epilog=textwrap.dedent('''
             Examples:
-            spinereports_plot_by_group -i group_folder -d demographics.tsv -o reports
+            spinereport_plot_by_group -i group_folder -d demographics.tsv -o reports
         '''),
         formatter_class=argparse.RawTextHelpFormatter
     )
@@ -1259,8 +1259,10 @@ def plot_metrics_by_sex(grouped_data, output_folder):
             ax.set_ylabel(f'{metric}')
             ax.set_title(f'{metric}')
             ax.grid(True, alpha=0.3)
-            if idx == 0:  # Only add legend to first subplot
-                ax.legend()
+            # if idx == 0:  # Only add legend to first subplot
+            #     ax.legend()
+            if ax.get_legend() is not None:
+                ax.get_legend().remove()
         
         # Remove empty subplots
         for idx in range(n_metrics, len(axes)):
@@ -1417,9 +1419,11 @@ def plot_metrics_by_age(grouped_data, output_folder):
             ax.set_ylabel(f'{metric}')
             ax.set_title(f'{metric}')
             ax.grid(True, alpha=0.3)
-            if idx == 0:  # Only add legend to first subplot
-                ax.legend()
-        
+            # if idx == 0:  # Only add legend to first subplot
+            #     ax.legend()
+            if ax.get_legend() is not None:
+                ax.get_legend().remove()
+
         # Remove empty subplots
         for idx in range(n_metrics, len(axes)):
             fig.delaxes(axes[idx])
@@ -1514,10 +1518,10 @@ def plot_canal_metrics_by_sex(all_values_df, discs_gap, last_disc, output_folder
             ax.set_xlabel('Disc Level')
             ax.set_ylabel(f'{metric}')
             #ax.set_title(f'{metric}')
-            ax.grid(True, alpha=0.3)
-            if idx == 0:  # Only add legend to first subplot
-                ax.legend(title='Sex')
-
+            # if idx == 0:  # Only add legend to first subplot
+            #     ax.legend(title='Sex')
+            if ax.get_legend() is not None:
+                ax.get_legend().remove()
         
         # Remove empty subplots
         for idx in range(n_metrics, len(axes)):
@@ -1612,10 +1616,11 @@ def plot_canal_metrics_by_age(all_values_df, discs_gap, last_disc, output_folder
             # Formatting
             ax.set_xlabel('Disc Level')
             ax.set_ylabel(f'{metric}')
-            #ax.set_title(f'{metric}')
-            ax.grid(True, alpha=0.3)
-            if idx == 0:  # Only add legend to first subplot
-                ax.legend(title='Age Group')
+            # if idx == 0:  # Only add legend to first subplot
+            #     ax.legend(title='Age Group')
+            
+            if ax.get_legend() is not None:
+                ax.get_legend().remove()
         
         # Remove empty subplots
         for idx in range(n_metrics, len(axes)):
