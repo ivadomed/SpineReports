@@ -33,16 +33,11 @@ conda activate spinereport
 
 ### 2. Install SpineReport
 
-**From PyPI (recommended):**
-```bash
-pip install spinereport
-```
-
 **From source:**
 ```bash
 git clone https://github.com/ivadomed/SpineReport.git
 cd SpineReport
-pip install -e .
+pip install .
 ```
 
 ### 3. Verify Installation
@@ -52,27 +47,8 @@ Test the installation by checking the help:
 spinereport --help
 ```
 
-## Dependencies
-
-SpineReport requires the following Python packages:
-
-- **opencv-python** - Image processing
-
-And will automatically install all required dependencies including:
-- nnU-Net for segmentation
-- NumPy for numerical operations
-- scikit-image for image analysis
-- matplotlib for visualization
-- pandas for data handling
-
 ## Troubleshooting
 
-### CUDA/GPU Support
-
-If you want to use GPU acceleration with CUDA, install the GPU version:
-
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
 ### Installation Issues
@@ -86,7 +62,7 @@ If you encounter issues during installation, try:
 
 2. Install in development mode:
    ```bash
-   pip install -e ".[dev]"
+   pip install -e .
    ```
 
 3. Check your Python version:

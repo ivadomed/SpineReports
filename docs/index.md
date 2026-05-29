@@ -7,16 +7,21 @@ description: "Automated extraction of spinal morphometrics and generation of str
 
 # SpineReport
 
-Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
+Automated extraction of 3D spinal morphometrics for vertebrae, intervertebral discs, spinal canal, spinal cord and intervertebral foramina and generation of structured radiological reports from MRI data against control populations.
 
-## About
+## Report Example
 
-SpineReport is a tool for automatically analyzing spinal MRI images and generating structured radiological reports. It performs:
+Click through the pages below to explore a sample SpineReport:
 
-- Spinal segmentation using nnU-Net
-- Automated morphometric measurements
-- Structured report generation with comparative analysis
-- Visualization with control group comparisons
+{% include report-carousel.html %}
+
+[Download the example report](https://github.com/ivadomed/SpineReport/raw/main/spinereport/resources/imgs/example_report.pdf){: .btn }
+
+## Extracted metrics
+
+Extracted metrics include:
+
+![Metrics](https://raw.githubusercontent.com/ivadomed/SpineReport/main/spinereport/resources/imgs/metrics.png)
 
 ## Quick Links
 
@@ -27,15 +32,9 @@ SpineReport is a tool for automatically analyzing spinal MRI images and generati
 
 ## Key Features
 
-✨ **Automated Analysis** - Performs fully automated spine segmentation and measurement  
-📊 **Structured Reports** - Generates professional radiological reports with graphs and statistics  
-📈 **Comparative Analysis** - Automatically compares subject data with control group  
+✨ **Automated Analysis** - Extraction of 3D morphometrics from MRI data  
+📊 **Structured Reports** - Generates radiological reports with graphs and statistics  
+📈 **Comparative Analysis** - Compares subject data with control group or normative database  
 🔧 **Easy Integration** - Simple command-line interface and Python API  
 
-## Example Report
-
-[View an example report](https://github.com/ivadomed/SpineReport/raw/main/spinereport/resources/imgs/example_report.pdf){: .btn }
-
----
-
-**Need help?** Check the [documentation](docs/){: .btn } or open an [issue](https://github.com/ivadomed/SpineReport/issues).
+**Need help?** Check the [documentation](docs/) or open an [issue](https://github.com/ivadomed/SpineReport/issues).
