@@ -1,0 +1,41 @@
+/* Custom Green Theme Override */
+:root {
+  --color-primary: #3aa03a;
+  --color-primary-dark: #2d7a2d;
+  --color-accent: #2d5016;
+}
+
+/* Update button colors */
+.btn-primary {
+  background-color: #3aa03a;
+}
+
+.btn-primary:hover {
+  background-color: #2d7a2d;
+}
+
+/* Update link colors */
+a {
+  color: #2d7a2d;
+}
+
+a:hover {
+  color: #1a4620;
+}
+
+/* Update heading colors */
+h1, h2, h3, h4, h5, h6 {
+  color: #2d5016;
+}
+
+/* Update navigation colors */
+.site-nav a:hover,
+.nav-list-link.active {
+  background-color: rgba(58, 160, 58, 0.1);
+  color: #2d7a2d;
+}
+
+/* Update search results highlight */
+.search-results-preview {
+  background-color: rgba(58, 160, 58, 0.05);
+}
