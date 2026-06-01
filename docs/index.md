@@ -36,4 +36,4 @@ Extracted metrics include:
 📈 **Comparative Analysis** - Comparison of subject data with control group or normative database  
 🔧 **Easy Integration** - Simple command-line interface and Python API  
 
-**Need help?** Check the [documentation](docs/) or open an [issue](https://github.com/ivadomed/SpineReport/issues).
+**Need help?** Check the [documentation](docs/index/) or open an [issue](https://github.com/ivadomed/SpineReport/issues).

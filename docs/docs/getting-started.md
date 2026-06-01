@@ -2,7 +2,7 @@
 layout: default
 title: Quick Start
 parent: Documentation
-nav_order: 2
+nav_order: 3
 ---
 
 # Quick Start Guide
@@ -79,4 +79,4 @@ SpineReport generates:
 - [Review detailed documentation](../docs/){: .btn }
 - [Visit GitHub repository](https://github.com/ivadomed/SpineReport){: .btn }
 
-**Need help?** Check the [documentation](docs/) or open an [issue](https://github.com/ivadomed/SpineReport/issues).
+**Need help?** Check the [documentation](docs/index/) or open an [issue](https://github.com/ivadomed/SpineReport/issues).

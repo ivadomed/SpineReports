@@ -49,10 +49,6 @@ spinereport --help
 
 ## Troubleshooting
 
-```
-
-### Installation Issues
-
 If you encounter issues during installation, try:
 
 1. Update pip and setuptools:
