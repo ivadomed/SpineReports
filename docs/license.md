@@ -8,8 +8,6 @@ nav_order: 100
 
 SpineReport is distributed under the [MIT License](https://github.com/ivadomed/SpineReport/blob/main/LICENSE).
 
-See the [LICENSE file](https://github.com/ivadomed/SpineReport/blob/main/LICENSE) in the repository for full details.
-
 ## Summary
 
 You are free to:

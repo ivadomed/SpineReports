@@ -27,14 +27,13 @@ Extracted metrics include:
 
 - [Installation](docs/installation/){: .btn .btn-primary }
 - [Quick Start](docs/getting-started/){: .btn .btn-primary }
-- [API Reference](docs/api/){: .btn .btn-primary }
 - [GitHub Repository](https://github.com/ivadomed/SpineReport){: .btn }
 
 ## Key Features
 
 ✨ **Automated Analysis** - Extraction of 3D morphometrics from MRI data  
-📊 **Structured Reports** - Generates radiological reports with graphs and statistics  
-📈 **Comparative Analysis** - Compares subject data with control group or normative database  
+📊 **Structured Reports** - Generation of radiological reports with graphs and statistics  
+📈 **Comparative Analysis** - Comparison of subject data with control group or normative database  
 🔧 **Easy Integration** - Simple command-line interface and Python API  
 
 **Need help?** Check the [documentation](docs/) or open an [issue](https://github.com/ivadomed/SpineReport/issues).

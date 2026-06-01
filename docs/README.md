@@ -53,15 +53,8 @@ docs/
 ├── Gemfile              # Ruby dependencies
 ├── index.md             # Home page
 ├── docs/                # Documentation pages
-│   ├── index.md
 │   ├── installation.md
-│   ├── getting-started.md
-│   ├── api.md
-│   └── guides/
-│       ├── contributing.md
-│       ├── development.md
-│       ├── faq.md
-│       └── report-interpretation.md
+│   └── getting-started.md
 └── _site/               # Built output (auto-generated)
 ```
 
