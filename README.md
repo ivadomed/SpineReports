@@ -1,4 +1,5 @@
 # SpineReport
+[![preprint](https://img.shields.io/badge/preprint-arXiv:2606.10021-orange)](https://arxiv.org/abs/2606.10021)
 
 Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
 
