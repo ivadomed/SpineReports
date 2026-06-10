@@ -1,5 +1,6 @@
 # SpineReport
 [![preprint](https://img.shields.io/badge/preprint-arXiv:2606.10021-orange)](https://arxiv.org/abs/2606.10021)
+[![Docs](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://ivadomed.github.io/SpineReport/)
 
 Automated extraction of spinal morphometrics and generation of structured radiological reports from MRI data.
 
