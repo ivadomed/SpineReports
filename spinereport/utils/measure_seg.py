@@ -291,25 +291,12 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    # try:
     metrics, imgs = measure_seg(
         img=img,
         seg=seg,
         label=label,
         mapping=mapping,
     )
-    # except ValueError as e:
-    #     print(f'ValueError: {seg_path}, {e}')
-    #     return
-    # except KeyError as e:
-    #     print(f'KeyError: {seg_path}, {e}')
-    #     return
-    # except IndexError as e:
-    #     print(f'IndexError: {seg_path}, {e}')
-    #     return
-    # except Exception as e:
-    #     print(f'Error: {seg_path}, {e}')
-    #     return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
