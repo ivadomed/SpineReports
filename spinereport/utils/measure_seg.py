@@ -291,25 +291,25 @@ def _measure_seg(
 
     metrics = {}
     imgs = {}
-    try:
-        metrics, imgs = measure_seg(
-            img=img,
-            seg=seg,
-            label=label,
-            mapping=mapping,
-        )
-    except ValueError as e:
-        print(f'ValueError: {seg_path}, {e}')
-        return
-    except KeyError as e:
-        print(f'KeyError: {seg_path}, {e}')
-        return
-    except IndexError as e:
-        print(f'IndexError: {seg_path}, {e}')
-        return
-    except Exception as e:
-        print(f'Error: {seg_path}, {e}')
-        return
+    # try:
+    metrics, imgs = measure_seg(
+        img=img,
+        seg=seg,
+        label=label,
+        mapping=mapping,
+    )
+    # except ValueError as e:
+    #     print(f'ValueError: {seg_path}, {e}')
+    #     return
+    # except KeyError as e:
+    #     print(f'KeyError: {seg_path}, {e}')
+    #     return
+    # except IndexError as e:
+    #     print(f'IndexError: {seg_path}, {e}')
+    #     return
+    # except Exception as e:
+    #     print(f'Error: {seg_path}, {e}')
+    #     return
     
     # Create output folders if does not exists
     img_name=Path(str(seg_path)).name.replace('.nii.gz', '')
@@ -434,29 +434,32 @@ def measure_seg(img, seg, label, mapping):
                 seg_vert_data = (seg.data == mapping[struc]).astype(int)
                 # Check if vertebra is more than one slice
                 if (seg_vert_data.sum(axis=0).sum(axis=0)).astype(bool).sum() > 1:
-                    properties, img_dict, body_array, add_struc = measure_vertebra(img_data=img.data, seg_vert_data=seg_vert_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, pr=pr)
-                    
-                    if add_struc:
-                        # Save image
-                        imgs[f'vertebrae_{struc}_seg'] = img_dict['seg']
-                        imgs[f'vertebrae_{struc}_img'] = img_dict['img']
+                    try:
+                        properties, img_dict, body_array, add_struc = measure_vertebra(img_data=img.data, seg_vert_data=seg_vert_data, seg_canal_data=seg_canal.data, canal_centerline=centerline, pr=pr)
 
-                        # Add vertebral bodies
-                        seg_bin.data[body_array.astype(bool)] = 1
+                        if add_struc:
+                            # Save image
+                            imgs[f'vertebrae_{struc}_seg'] = img_dict['seg']
+                            imgs[f'vertebrae_{struc}_img'] = img_dict['img']
 
-                        # Create a row per position/thickness point
-                        vertebrae_row = {
-                            "structure": "vertebra",
-                            "name": struc,
-                            "AP_thickness": properties['AP_thickness'],
-                            "median_thickness": properties['median_thickness'],
-                            "center": properties['center'],
-                            "volume": properties['volume'],
-                            "median_signal": properties['median_signal'],
-                            "ap_attenuation": properties['ap_attenuation']
-                        }
-                        vertebrae_rows.append(vertebrae_row)
-                        body_dict[struc] = body_array
+                            # Add vertebral bodies
+                            seg_bin.data[body_array.astype(bool)] = 1
+
+                            # Create a row per position/thickness point
+                            vertebrae_row = {
+                                "structure": "vertebra",
+                                "name": struc,
+                                "AP_thickness": properties['AP_thickness'],
+                                "median_thickness": properties['median_thickness'],
+                                "center": properties['center'],
+                                "volume": properties['volume'],
+                                "median_signal": properties['median_signal'],
+                                "ap_attenuation": properties['ap_attenuation']
+                            }
+                            vertebrae_rows.append(vertebrae_row)
+                            body_dict[struc] = body_array
+                    except Exception as e:
+                        print(f'Warning: failed to extract metrics for vertebra {struc}: {e}')
             
     metrics['vertebrae'] = vertebrae_rows
 
@@ -496,128 +499,151 @@ def measure_seg(img, seg, label, mapping):
 
     # Measure CSF signal
     seg_csf_data = (seg.data == mapping['CSF']).astype(int)
-    properties = measure_csf(img.data, seg_csf_data, centerline, spine_centerline)
-    csf_signal = properties['csf_signal']
-    del properties['csf_signal']
+    try:
+        properties = measure_csf(img.data, seg_csf_data, centerline, spine_centerline)
+        csf_signal_raw = properties['csf_signal']
+        del properties['csf_signal']
+
+        rows = []
+        for i in range(len(properties[list(properties.keys())[0]])):
+            slice_nb = list(properties[list(properties.keys())[0]].keys())[i]
+            row = {
+                "structure": "csf",
+                "index": i,
+                "slice_nb": slice_nb,
+                "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
+                "centerline_distance": centerline_distance[slice_nb]
+                }
+            for key in properties.keys():
+                row[key] = properties[key][slice_nb]
+
+            rows.append(row)
+        metrics['csf'] = rows
+    except Exception as e:
+        print(f'Warning: failed to extract CSF metrics: {e}')
+        metrics['csf'] = []
+        csf_signal_raw = np.percentile(img.data[seg_csf_data > 0], 90) if np.any(seg_csf_data > 0) else np.percentile(img.data, 90)
 
     p5 = np.percentile(img.data, 5)
     p95 = np.percentile(img.data, 95)
-    img.data = (img.data - p5) / (csf_signal - p5 + 1e-8)
+    img.data = (img.data - p5) / (csf_signal_raw - p5 + 1e-8)
     img.data = np.clip(img.data, 0, 1)
     csf_signal = 1.0
 
-    rows = []
-    for i in range(len(properties[list(properties.keys())[0]])):
-        slice_nb = list(properties[list(properties.keys())[0]].keys())[i]
-        row = {
-            "structure": "csf",
-            "index": i,
-            "slice_nb": slice_nb,
-            "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
-            "centerline_distance": centerline_distance[slice_nb]
-            }
-        for key in properties.keys():
-            row[key] = properties[key][slice_nb]
-
-        rows.append(row)
-    metrics['csf'] = rows
-
     # Compute metrics onto canal segmentation
-    properties = measure_canal(seg_canal, centerline, spine_centerline)
-    rows = []
-    for i in range(len(properties[list(properties.keys())[0]])):
-        slice_nb = list(properties[list(properties.keys())[0]].keys())[i]
-        row = {
-            "structure": "canal",
-            "index": i,
-            "slice_nb": slice_nb,
-            "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
-            "centerline_distance": centerline_distance[slice_nb],
-            }
-        for key in properties.keys():
-            row[key] = properties[key][slice_nb]
-        rows.append(row)
-    metrics['canal'] = rows
+    try:
+        properties = measure_canal(seg_canal, centerline, spine_centerline)
+        rows = []
+        for i in range(len(properties[list(properties.keys())[0]])):
+            slice_nb = list(properties[list(properties.keys())[0]].keys())[i]
+            row = {
+                "structure": "canal",
+                "index": i,
+                "slice_nb": slice_nb,
+                "disc_level": disc_slices[slice_nb] if slice_nb in disc_slices else None,
+                "centerline_distance": centerline_distance[slice_nb],
+                }
+            for key in properties.keys():
+                row[key] = properties[key][slice_nb]
+            rows.append(row)
+        metrics['canal'] = rows
+    except Exception as e:
+        print(f'Warning: failed to extract canal metrics: {e}')
+        metrics['canal'] = []
 
     # Compute metrics onto foramens
     foramens_rows = []
-    radius = 60 # mm, radius of the straightened patch to extract around the centerline
-    straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
-    straightened_canal = ndimage.map_coordinates(seg_canal.data, straightened_coordinates, order=1, mode='grid-constant')
-    straightened_image = ndimage.map_coordinates(img.data, straightened_coordinates, order=1, mode='grid-constant')
-    for i, struc in enumerate(body_dict.keys()):
-        vert_value = int(struc[1:])
-        if struc.startswith('C'):
-            if vert_value == 7:
-                next_vert = 'T1'
-            else:
-                next_vert = f'C{vert_value+1}'
-        elif struc.startswith('T'):
-            if vert_value == 12:
-                next_vert = 'L1'
-            else:
-                next_vert = f'T{vert_value+1}'
-        elif struc.startswith('L'):
-            next_vert = f'L{vert_value+1}'
-        if next_vert in body_dict.keys(): # two adjacent vertebrae
-            # Fetch vertebrae names
-            top_vert = struc
-            bottom_vert = next_vert
-            foramens_name = f'foramens_{top_vert}-{bottom_vert}'
+    try:
+        radius = 60 # mm, radius of the straightened patch to extract around the centerline
+        straightened_coordinates, first_z_index = straighten_coordinates(centerline, spine_centerline, radius=radius)
+        straightened_canal = ndimage.map_coordinates(seg_canal.data, straightened_coordinates, order=1, mode='grid-constant')
+        straightened_image = ndimage.map_coordinates(img.data, straightened_coordinates, order=1, mode='grid-constant')
+    except Exception as e:
+        print(f'Warning: failed to straighten spine for foramen extraction: {e}')
+        straightened_coordinates = None
 
-            # Init foramen segmentation
-            seg_body_foramen_data = np.zeros_like(seg.data).astype(int)
-            if f'{top_vert}-{bottom_vert}' != 'C1-C2':
-                disc_mask = (seg.data == mapping[f'{top_vert}-{bottom_vert}'])
-                seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
-            else:
-                seg_foramen_data = np.zeros_like(seg.data).astype(int)
+    if straightened_coordinates is not None:
+        for i, struc in enumerate(body_dict.keys()):
+            try:
+                vert_value = int(struc[1:])
+                if struc.startswith('C'):
+                    if vert_value == 7:
+                        next_vert = 'T1'
+                    else:
+                        next_vert = f'C{vert_value+1}'
+                elif struc.startswith('T'):
+                    if vert_value == 12:
+                        next_vert = 'L1'
+                    else:
+                        next_vert = f'T{vert_value+1}'
+                elif struc.startswith('L'):
+                    next_vert = f'L{vert_value+1}'
+                if next_vert in body_dict.keys(): # two adjacent vertebrae
+                    # Fetch vertebrae names
+                    top_vert = struc
+                    bottom_vert = next_vert
+                    foramens_name = f'foramens_{top_vert}-{bottom_vert}'
 
-            # Compute vertebrae properties
-            for vert in [top_vert, bottom_vert]:
-                seg_foramen_data += (seg.data == mapping[vert]).astype(int)
-                seg_body_foramen_data += body_dict[vert].astype(int)
-            
-        elif struc.startswith('L') and vert_value > 4 and mapping['sacrum'] in unique_seg:
-            # Create foramen name
-            foramens_name = f'foramens_{struc}-S'
+                    # Init foramen segmentation
+                    seg_body_foramen_data = np.zeros_like(seg.data).astype(int)
+                    if f'{top_vert}-{bottom_vert}' != 'C1-C2':
+                        disc_mask = (seg.data == mapping[f'{top_vert}-{bottom_vert}'])
+                        seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
+                    else:
+                        seg_foramen_data = np.zeros_like(seg.data).astype(int)
 
-            # Init foramen segmentation
-            disc_mask = (seg.data == mapping[f'L5-S'])
-            seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
-            seg_body_foramen_data = np.zeros_like(seg.data).astype(int)
+                    # Compute vertebrae properties
+                    for vert in [top_vert, bottom_vert]:
+                        seg_foramen_data += (seg.data == mapping[vert]).astype(int)
+                        seg_body_foramen_data += body_dict[vert].astype(int)
 
-            # Add vertebrae and sacrum
-            seg_foramen_data += (seg.data == mapping[struc]).astype(int)
-            seg_foramen_data += (seg.data == mapping["sacrum"]).astype(int) * 3  # Set sacrum value to 3
-            seg_body_foramen_data += body_dict[struc].astype(int)        
-        else:
-            continue
+                elif struc.startswith('L') and vert_value > 4 and mapping['sacrum'] in unique_seg:
+                    # Create foramen name
+                    foramens_name = f'foramens_{struc}-S'
 
-        # Compute foramens properties
-        foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate = measure_foramens(foramens_name=foramens_name, straightened_coordinates=straightened_coordinates, straightened_image=straightened_image, seg_foramen_data=seg_foramen_data, seg_body_foramen_data=seg_body_foramen_data, straightened_canal=straightened_canal, pr=pr)
-    
-        # Save images
-        for side,im in foramens_seg.items():
-            imgs[f'{foramens_name}_{side}_seg'] = im
-        
-        for side,im in foramens_img.items():
-            imgs[f'{foramens_name}_{side}_img'] = im
-        
-        for side,im in foramens_img_nodilate.items():
-            imgs[f'{foramens_name}_{side}_img_nodilate'] = im
+                    # Init foramen segmentation
+                    disc_mask = (seg.data == mapping[f'L5-S'])
+                    seg_foramen_data = disc_mask.astype(int) * 2 # Set disc value to 2
+                    seg_body_foramen_data = np.zeros_like(seg.data).astype(int)
 
-        # Save foramen metrics
-        foramens_row = {
-            "structure": "foramen",
-            "name": foramens_name,
-            "right_area": foramens_areas['right'],
-            "left_area": foramens_areas['left']
-        }
-        foramens_rows.append(foramens_row)
+                    # Add vertebrae and sacrum
+                    seg_foramen_data += (seg.data == mapping[struc]).astype(int)
+                    seg_foramen_data += (seg.data == mapping["sacrum"]).astype(int) * 3  # Set sacrum value to 3
+                    seg_body_foramen_data += body_dict[struc].astype(int)
+                else:
+                    continue
+
+                # Compute foramens properties
+                foramens_areas, foramens_img, foramens_seg, foramens_img_nodilate = measure_foramens(foramens_name=foramens_name, straightened_coordinates=straightened_coordinates, straightened_image=straightened_image, seg_foramen_data=seg_foramen_data, seg_body_foramen_data=seg_body_foramen_data, straightened_canal=straightened_canal, pr=pr)
+
+                # Save images
+                for side,im in foramens_seg.items():
+                    imgs[f'{foramens_name}_{side}_seg'] = im
+
+                for side,im in foramens_img.items():
+                    imgs[f'{foramens_name}_{side}_img'] = im
+
+                for side,im in foramens_img_nodilate.items():
+                    imgs[f'{foramens_name}_{side}_img_nodilate'] = im
+
+                # Save foramen metrics
+                foramens_row = {
+                    "structure": "foramen",
+                    "name": foramens_name,
+                    "right_area": foramens_areas['right'],
+                    "left_area": foramens_areas['left']
+                }
+                foramens_rows.append(foramens_row)
+            except Exception as e:
+                print(f'Warning: failed to extract foramen metrics for vertebra {struc}: {e}')
+                continue
 
     # Compute foramen compression ratio using all extracted foramens
-    metrics['foramens'], imgs = compute_foramen_compression_ratio(foramens_rows, imgs)
+    try:
+        metrics['foramens'], imgs = compute_foramen_compression_ratio(foramens_rows, imgs)
+    except Exception as e:
+        print(f'Warning: failed to compute foramen compression ratio: {e}')
+        metrics['foramens'] = foramens_rows
 
     # Compute metrics onto intervertebral discs
     rows = []
@@ -626,41 +652,45 @@ def measure_seg(img, seg, label, mapping):
             seg_disc_data = (seg.data == mapping[struc]).astype(int)
             # Check if disc is more than one slice
             if (seg_disc_data.sum(axis=0).sum(axis=0)).astype(bool).sum() > 1:
-                lower_vert = struc.split('-')[0]
-                upper_vert = struc.split('-')[1]
-                # Apply intensity coeff based on vertebrae signal homogeneity to account for signal loss
-                if lower_vert in vert_signal_dict and upper_vert in vert_signal_dict:
-                    intensity_coeff = (vert_signal_dict[lower_vert] + vert_signal_dict[upper_vert]) / 2
-                elif upper_vert in vert_signal_dict:
-                    intensity_coeff = vert_signal_dict[upper_vert]
-                else:
-                    intensity_coeff = 1
-                properties, img_dict, add_struc = measure_disc(img_data=img.data, seg_disc_data=seg_disc_data, centerline=centerline, csf_signal=csf_signal*intensity_coeff, pr=pr)
+                try:
+                    lower_vert = struc.split('-')[0]
+                    upper_vert = struc.split('-')[1]
+                    # Apply intensity coeff based on vertebrae signal homogeneity to account for signal loss
+                    if lower_vert in vert_signal_dict and upper_vert in vert_signal_dict:
+                        intensity_coeff = (vert_signal_dict[lower_vert] + vert_signal_dict[upper_vert]) / 2
+                    elif upper_vert in vert_signal_dict:
+                        intensity_coeff = vert_signal_dict[upper_vert]
+                    else:
+                        intensity_coeff = 1
+                    properties, img_dict, add_struc = measure_disc(img_data=img.data, seg_disc_data=seg_disc_data, centerline=centerline, csf_signal=csf_signal*intensity_coeff, pr=pr)
 
-                if add_struc:
-                    # Save image
-                    imgs[f'discs_{struc}_seg'] = img_dict['seg']
-                    imgs[f'discs_{struc}_img'] = img_dict['img']
-                    # Create a row
-                    row = {
-                        "structure": "disc",
-                        "name": struc,
-                        "eccentricity_AP-RL": properties['eccentricity_AP-RL'],
-                        "eccentricity_AP-SI": properties['eccentricity_AP-SI'],
-                        "eccentricity_RL-SI": properties['eccentricity_RL-SI'],
-                        "solidity": properties['solidity'],
-                        "nucleus_eccentricity_AP-RL": properties['nucleus_eccentricity_AP-RL'],
-                        "nucleus_eccentricity_AP-SI": properties['nucleus_eccentricity_AP-SI'],
-                        "nucleus_eccentricity_RL-SI": properties['nucleus_eccentricity_RL-SI'],
-                        "nucleus_solidity": properties['nucleus_solidity'],
-                        "nucleus_volume": properties['nucleus_volume'],
-                        "nucleus_median_thickness": properties['nucleus_median_thickness'],
-                        "intensity_variation": properties['intensity_variation'],
-                        "median_thickness": properties['median_thickness'],
-                        "center": properties['center'],
-                        "volume": properties['volume']
-                    }
-                    rows.append(row)
+                    if add_struc:
+                        # Save image
+                        imgs[f'discs_{struc}_seg'] = img_dict['seg']
+                        imgs[f'discs_{struc}_img'] = img_dict['img']
+                        # Create a row
+                        row = {
+                            "structure": "disc",
+                            "name": struc,
+                            "eccentricity_AP-RL": properties['eccentricity_AP-RL'],
+                            "eccentricity_AP-SI": properties['eccentricity_AP-SI'],
+                            "eccentricity_RL-SI": properties['eccentricity_RL-SI'],
+                            "solidity": properties['solidity'],
+                            "nucleus_eccentricity_AP-RL": properties['nucleus_eccentricity_AP-RL'],
+                            "nucleus_eccentricity_AP-SI": properties['nucleus_eccentricity_AP-SI'],
+                            "nucleus_eccentricity_RL-SI": properties['nucleus_eccentricity_RL-SI'],
+                            "nucleus_solidity": properties['nucleus_solidity'],
+                            "nucleus_volume": properties['nucleus_volume'],
+                            "nucleus_median_thickness": properties['nucleus_median_thickness'],
+                            "intensity_variation": properties['intensity_variation'],
+                            "median_thickness": properties['median_thickness'],
+                            "center": properties['center'],
+                            "volume": properties['volume']
+                        }
+                        rows.append(row)
+                except Exception as e:
+                    print(f'Warning: failed to extract metrics for disc {struc}: {e}')
+                    continue
     metrics['discs'] = rows
 
     return metrics, imgs
@@ -1739,57 +1769,9 @@ def smooth(y, box_pts):
     return y_smooth
 
 if __name__ == '__main__':
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/input/sub-001_ses-A_acq-isotropic_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/step2_output/sub-001_ses-A_acq-isotropic_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/out/step1_levels/sub-001_ses-A_acq-isotropic_T2w.nii.gz'
-
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-039_acq-lowresSag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-039_acq-lowresSag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-039_acq-lowresSag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-251_acq-lowresSag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-251_acq-lowresSag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-251_acq-lowresSag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-237_acq-lowresSag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-237_acq-lowresSag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-237_acq-lowresSag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/input/sub-088_acq-lowresSag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step2_output/sub-088_acq-lowresSag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/spider_output/step1_levels/sub-088_acq-lowresSag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI010_ses-Pre_acq-sagittalStirirfse_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI010_ses-Post2_acq-sagittalStir_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-009_acq-sag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-009_acq-sag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-009_acq-sag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
-    
-    img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-271_acq-sag_T2w_0000.nii.gz'
-    seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-271_acq-sag_T2w.nii.gz'
-    label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-271_acq-sag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/input/sub-145_acq-sag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step2_output/sub-145_acq-sag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/analysis_balgrist/out/step1_levels/sub-145_acq-sag_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/input/sub-nMRI035_ses-Pre_acq-sagStir_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step2_output/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/test-tss/lbp_sag_out/step1_levels/sub-nMRI035_ses-Pre_acq-sagStir_T2w.nii.gz'
-    
-    # img_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/input/ESF_Post_Sag_T2w_0000.nii.gz'
-    # seg_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step2_output/ESF_Post_Sag_T2w.nii.gz'
-    # label_path = '/home/GRAMES.POLYMTL.CA/p118739/data_nvme_p118739/data/datasets/jacob-cervical/out/step1_levels/ESF_Post_Sag_T2w.nii.gz'
+    img_path = '/Users/nathan/Desktop/split_08_out_iso/input/08-localizer_fast_FA3_TR10_BW240_5slc_15meas_p2_1_meas013_0000.nii.gz'
+    seg_path = '/Users/nathan/Desktop/split_08_out_iso/step2_output/08-localizer_fast_FA3_TR10_BW240_5slc_15meas_p2_1_meas013.nii.gz'
+    label_path = '/Users/nathan/Desktop/split_08_out_iso/step1_levels/08-localizer_fast_FA3_TR10_BW240_5slc_15meas_p2_1_meas013.nii.gz'
 
     ofolder_path = 'test'
 
