@@ -315,7 +315,12 @@ def generate_reports(
                 for metric in control_data[struc][struc_name].keys():
                     # Add subject to all_values
                     subject_value = control_data[struc][struc_name][metric]
-                    if (isinstance(subject_value, list) and np.isin(['disc_level', 'centerline_distance'], np.array(list(control_data['canal']['canal'].keys()))).all()) or isinstance(subject_value, (int, float)) and subject_value != -1:
+                    canal_has_keys = (
+                        'canal' in control_data
+                        and 'canal' in control_data['canal']
+                        and np.isin(['disc_level', 'centerline_distance'], np.array(list(control_data['canal']['canal'].keys()))).all()
+                    )
+                    if (isinstance(subject_value, list) and canal_has_keys) or isinstance(subject_value, (int, float)) and subject_value != -1:
                         if struc not in all_values['all']:
                             all_values['all'][struc] = {}
                         if struc_name not in all_values['all'][struc]:
@@ -460,6 +465,8 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
     # Rescale canal and CSF metrics
     interp_data = copy.deepcopy(subject_data)
     for struc in ['canal', 'csf']:
+        if struc not in subject_data:
+            continue
         for struc_name in subject_data[struc].keys():
             for metric in subject_data[struc][struc_name].keys():
                 if metric in ['slice_nb', 'disc_level', 'centerline_distance']:
@@ -477,13 +484,15 @@ def create_figures(sub_folder, imgs_path, ofolder_subject, all_values, demograph
     create_global_figures(interp_data, all_values_df, discs_gap, last_disc, median_dict, imgs_path, rev_mapping, ofolder_subject)
 
 def compute_discs_gradings(subject_data, median_dict, do_grading=True):
+    if 'discs' not in subject_data:
+        return subject_data
     for group in median_dict.keys():
         for disc in subject_data['discs'].keys():
             median_height = None
             std_height = None
             if 'grading' not in subject_data['discs'][disc]:
                 subject_data['discs'][disc]['grading'] = {}
-            if disc in median_dict[group]['discs']:
+            if 'discs' in median_dict[group] and disc in median_dict[group]['discs']:
                 if 'DHI' in median_dict[group]['discs'][disc]:
                     median_height = median_dict[group]['discs'][disc]['DHI']['median']
                     std_height = np.std(median_dict[group]['discs'][disc]['DHI']['std'])
@@ -654,10 +663,12 @@ def process_foramens(subject_data):
 
 def compute_discs_metrics(data_dict):
     # Compute Disc Height Index (DHI)
+    if 'discs' not in data_dict:
+        return data_dict
     for struc_name in data_dict['discs'].keys():
         top_vertebra = struc_name.split('-')[0]
         data_dict['discs'][struc_name]['eccentricity'] = data_dict['discs'][struc_name]['eccentricity_AP-RL']
-        if top_vertebra in data_dict['vertebrae']:
+        if 'vertebrae' in data_dict and top_vertebra in data_dict['vertebrae']:
             # Normalize disc height with top vertebra AP_thickness
             data_dict['discs'][struc_name]['DHI'] = data_dict['discs'][struc_name]['median_thickness'] / data_dict['vertebrae'][top_vertebra]['AP_thickness']
         else:
@@ -666,6 +677,8 @@ def compute_discs_metrics(data_dict):
 
 def compute_foramens_metrics(data_dict):
     # Compute Foramen metrics
+    if 'foramens' not in data_dict:
+        return data_dict
     for struc_name in data_dict['foramens'].keys():
         if data_dict['foramens'][struc_name]['right_area'] != -1 and data_dict['foramens'][struc_name]['left_area'] != -1 and data_dict['foramens'][struc_name]['left_area'] != 0:
             data_dict['foramens'][struc_name]['asymmetry_R-L'] = data_dict['foramens'][struc_name]['right_area'] / data_dict['foramens'][struc_name]['left_area']
@@ -685,6 +698,9 @@ def rescale_canal(all_values, rev_mapping):
     struc = 'canal'
     struc_name = 'canal'
     # Align all metrics for each subject using discs level as references
+    if struc not in all_values.get('all', {}) or struc_name not in all_values['all'].get(struc, {}):
+        print(f'Warning: no {struc}/{struc_name} data in control group; skipping canal/CSF rescale.')
+        return new_values, 1, None
     disc_levels = all_values['all'][struc][struc_name]['disc_level']
     centerline_distances = all_values['all'][struc][struc_name]['centerline_distance']
     # Flatten the list of arrays and concatenate all unique values
@@ -740,6 +756,8 @@ def rescale_canal(all_values, rev_mapping):
     # Rescale canal and CSF metrics for each subject using discs
     for key in all_values.keys():
         for struc in ['canal', 'csf']:
+            if struc not in all_values[key]:
+                continue
             for struc_name in all_values[key][struc].keys():
                 # Rescale subjects
                 add_slice_interp = True
@@ -990,6 +1008,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             )
 
             for struc in ['canal']:
+                if struc not in subject_data or struc not in all_values_df[group]:
+                    continue
                 # Create a subplot for each subject and overlay a red line corresponding to their value
                 struc_names = np.array(list(subject_data[struc].keys()))
                 struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
@@ -1081,6 +1101,8 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
                 plt.close(fig)
             
             for struc in ['csf']:
+                if struc not in subject_data or struc not in all_values_df[group]:
+                    continue
                 # Create a subplot for each subject and overlay a red line corresponding to their value
                 struc_names = np.array(list(subject_data[struc].keys()))
                 struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
@@ -1177,9 +1199,13 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
             # Create vertebrae, foramens figures
             struc = 'foramens'
-            # Create a subplot for each subject and overlay a red line corresponding to their value
-            struc_names = np.array(list(subject_data[struc].keys()))
-            struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
+            if struc not in subject_data or struc not in all_values_df[group]:
+                print(f'Warning: skipping {struc} report page (data missing).')
+                struc_names = []
+            else:
+                # Create a subplot for each subject and overlay a red line corresponding to their value
+                struc_names = np.array(list(subject_data[struc].keys()))
+                struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 3
@@ -1301,9 +1327,13 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
 
             # Create discs figures
             struc = 'discs'
-            # Create a subplot for each subject and overlay a red line corresponding to their value
-            struc_names = np.array(list(subject_data[struc].keys()))
-            struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
+            if struc not in subject_data or struc not in all_values_df[group]:
+                print(f'Warning: skipping {struc} report page (data missing).')
+                struc_names = []
+            else:
+                # Create a subplot for each subject and overlay a red line corresponding to their value
+                struc_names = np.array(list(subject_data[struc].keys()))
+                struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 4
@@ -1345,7 +1375,7 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             for struc_name in struc_names:
                 axes[idx].text(0.5, 0.5, struc_name, fontsize=header_fs, ha='center', va='center')
                 axes[idx].set_axis_off()
-                grading = subject_data[struc][struc_name]['grading'][group]
+                grading = subject_data[struc][struc_name].get('grading', {}).get(group, 'N/A')
                 axes[idx+1].text(0.5, 0.5, f'Grading {grading}', fontsize=header_fs, ha='center', va='center')
                 axes[idx+1].set_axis_off()
                 # Load images
@@ -1416,9 +1446,13 @@ def create_global_figures(subject_data, all_values_df, discs_gap, last_disc, med
             plt.close(fig)
         
             struc = 'vertebrae'
-            # Create a subplot for each subject and overlay a red line corresponding to their value
-            struc_names = np.array(list(subject_data[struc].keys()))
-            struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
+            if struc not in subject_data or struc not in all_values_df[group]:
+                print(f'Warning: skipping {struc} report page (data missing).')
+                struc_names = []
+            else:
+                # Create a subplot for each subject and overlay a red line corresponding to their value
+                struc_names = np.array(list(subject_data[struc].keys()))
+                struc_names = struc_names[np.isin(struc_names, list(all_values_df[group][struc].keys()))].tolist()
             metrics = metrics_dict[struc]
             nrows = len(struc_names) + 1
             ncols = len(metrics) + 3
